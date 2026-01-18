@@ -19,8 +19,8 @@ jobs:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/trip
           tags: |
             type=semver,pattern={{version}},value=${{ steps.get_tag.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.get_tag.outputs.tag }}
-            type=semver,pattern={{major}},value=${{ steps.get_tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.get_tag.outputs.tag }},enable=true
+            type=semver,pattern={{major}},value=${{ steps.get_tag.outputs.tag }},enable=true
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
