@@ -22,8 +22,14 @@ jobs:
           git remote add upstream https://github.com/itskovacs/trip
           git fetch upstream --tags
           git checkout main
-          git merge upstream/main --no-commit --no-ff
+
+          git merge upstream/main --no-commit --no-ff || true
           git restore --source=HEAD --staged --worktree .github || true
-          git commit -m "Merge upstream changes (exclude .github)"
-          git push origin main
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Merge upstream changes (exclude .github)"
+            git push origin main
+          else
+            echo "No changes to commit"
+
           git push origin --tags
