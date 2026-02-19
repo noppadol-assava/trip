@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, HostListener } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
@@ -14,12 +14,13 @@ import { InputGroupAddonModule } from 'primeng/inputgroupaddon';
 import { ApiService } from '../../services/api.service';
 import { UtilsService } from '../../services/utils.service';
 import { FocusTrapModule } from 'primeng/focustrap';
-import { Category, GooglePlaceResult, Place } from '../../types/poi';
+import { Category, Place } from '../../types/poi';
+import { ProviderPlaceResult } from '../../types/provider';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TooltipModule } from 'primeng/tooltip';
 import { checkAndParseLatLng, formatLatLng } from '../../shared/latlng-parser';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { PlaceCreateGmapsModalComponent } from '../place-create-gmaps-modal/place-create-gmaps-modal.component';
+import { PlaceCreateProviderModalComponent } from '../place-create-provider-modal/place-create-provider-modal.component';
 import { DialogModule } from 'primeng/dialog';
 
 @Component({
@@ -47,6 +48,13 @@ import { DialogModule } from 'primeng/dialog';
   styleUrl: './place-create-modal.component.scss',
 })
 export class PlaceCreateModalComponent {
+  @HostListener('keydown.control.enter', ['$event'])
+  @HostListener('keydown.meta.enter', ['$event'])
+  onCtrlEnter(event: Event) {
+    event.preventDefault();
+    this.closeDialog();
+  }
+
   placeForm: FormGroup;
   categories$?: Observable<Category[]>;
   previous_image_id: number | null = null;
@@ -132,12 +140,14 @@ export class PlaceCreateModalComponent {
   }
 
   closeDialog() {
-    // Normalize data for API POST
+    if (!this.placeForm.valid) return;
     let ret = this.placeForm.value;
     ret['category_id'] = ret['category'];
     delete ret['category'];
     if (ret['image_id']) {
       delete ret['image'];
+      delete ret['image_id'];
+    } else {
       delete ret['image_id'];
     }
     if (ret['gpx'] == '1') delete ret['gpx'];
@@ -161,18 +171,25 @@ export class PlaceCreateModalComponent {
     if (!id) return;
     this.utilsService.setLoading('Querying Google Maps API...');
     this.apiService
-      .resolveGmapsShortLink(id)
+      .completionGoogleShortlink(id)
       .pipe(take(1))
       .subscribe({
         next: (result) => {
           this.utilsService.setLoading('');
-          this.gmapsToForm(result);
+          this.providerToForm(result);
         },
         error: () => {
           this.utilsService.setLoading('');
           this.utilsService.toast('error', 'Error', 'Could not parse maps.app.goo.gl identifier');
         },
       });
+  }
+
+  storePreviousImageAndClear() {
+    if (!this.placeForm.get('image_id')?.value) return;
+    this.previous_image_id = this.placeForm.get('image_id')?.value;
+    this.previous_image = this.placeForm.get('image')?.value;
+    this.placeForm.get('image_id')?.setValue(null);
   }
 
   onImageSelected(event: Event) {
@@ -182,12 +199,7 @@ export class PlaceCreateModalComponent {
       const reader = new FileReader();
 
       reader.onload = (e) => {
-        if (this.placeForm.get('image_id')?.value) {
-          this.previous_image_id = this.placeForm.get('image_id')?.value;
-          this.previous_image = this.placeForm.get('image')?.value;
-          this.placeForm.get('image_id')?.setValue(null);
-        }
-
+        this.storePreviousImageAndClear();
         this.placeForm.get('image')?.setValue(e.target?.result as string);
         this.placeForm.get('image')?.markAsDirty();
       };
@@ -226,7 +238,7 @@ export class PlaceCreateModalComponent {
     this.placeForm.get('gpx')?.markAsDirty();
   }
 
-  gmapsToForm(r: GooglePlaceResult) {
+  providerToForm(r: ProviderPlaceResult) {
     this.placeForm.patchValue({ ...r, lat: formatLatLng(r.lat), lng: formatLatLng(r.lng), place: r.name || '' });
     this.placeForm.get('category')?.markAsDirty();
     this.utilsService.setLoading('');
@@ -241,11 +253,11 @@ export class PlaceCreateModalComponent {
     }
   }
 
-  gmapsSearchText() {
-    this.utilsService.setLoading('Querying Google Maps API...');
+  completionSearchText() {
+    this.utilsService.setLoading('Querying Provider API...');
     const query = this.placeForm.get('name')?.value;
     if (!query) return;
-    this.apiService.gmapsSearchText(query).subscribe({
+    this.apiService.completionSearchText(query).subscribe({
       next: (results) => {
         this.utilsService.setLoading('');
         if (!results.length) {
@@ -254,16 +266,18 @@ export class PlaceCreateModalComponent {
         }
 
         if (results.length == 1) {
-          this.gmapsToForm(results[0]);
+          this.providerToForm(results[0]);
           return;
         }
 
-        const modal: DynamicDialogRef = this.dialogService.open(PlaceCreateGmapsModalComponent, {
-          header: 'Select GMaps Place',
+        const modal: DynamicDialogRef = this.dialogService.open(PlaceCreateProviderModalComponent, {
+          header: 'Select Provider Place',
           modal: true,
           appendTo: 'body',
           closable: true,
           dismissableMask: true,
+          draggable: false,
+          resizable: false,
           data: results,
           width: '40vw',
           breakpoints: {
@@ -273,12 +287,13 @@ export class PlaceCreateModalComponent {
         })!;
 
         modal.onClose.pipe(take(1)).subscribe({
-          next: (result: GooglePlaceResult | null) => {
+          next: (result: ProviderPlaceResult | null) => {
             if (!result) return;
-            this.gmapsToForm(result);
+            this.providerToForm(result);
           },
         });
       },
+      error: () => this.utilsService.setLoading(''),
     });
   }
 
@@ -289,7 +304,9 @@ export class PlaceCreateModalComponent {
 
   setImageFromUrl() {
     if (!this.imageUrl) return;
-    this.placeForm.patchValue({ image: this.imageUrl });
+    this.storePreviousImageAndClear();
+    this.placeForm.get('image')?.setValue(this.imageUrl);
+    this.placeForm.get('image')?.markAsDirty();
     this.showImageUrlDialog = false;
     this.imageUrl = '';
   }

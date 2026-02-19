@@ -1,4 +1,4 @@
-import { Component, ViewChild } from '@angular/core';
+import { Component, HostListener, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -46,6 +46,13 @@ import { take } from 'rxjs';
 })
 export class TripCreateDayItemModalComponent {
   @ViewChild('op') op!: Popover;
+  @HostListener('keydown.control.enter', ['$event'])
+  @HostListener('keydown.meta.enter', ['$event'])
+  onCtrlEnter(event: Event) {
+    event.preventDefault();
+    this.closeDialog();
+  }
+
   members: TripMember[] = [];
   itemForm: FormGroup;
   places: Place[] = [];
@@ -111,28 +118,23 @@ export class TripCreateDayItemModalComponent {
         });
 
       if (data.selectedDay) this.itemForm.get('day_id')?.setValue([data.selectedDay]);
+      if (data.selectedPlaceId) {
+        this.itemForm.get('place')?.setValue(data.selectedPlaceId);
+        this.placeUpdatedTrigger(data.selectedPlaceId);
+      }
     }
 
     this.itemForm
       .get('place')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe({
-        next: (value?: number) => {
-          if (!value) {
+        next: (newPlace?: number) => {
+          if (!newPlace) {
             this.itemForm.get('lat')?.setValue('');
             this.itemForm.get('lng')?.setValue('');
             return;
           }
-
-          const p: Place = this.places.find((p) => p.id === value) as Place;
-          if (p) {
-            this.itemForm.get('lat')?.setValue(p.lat);
-            this.itemForm.get('lng')?.setValue(p.lng);
-            this.itemForm.get('price')?.setValue(p.price || 0);
-            if (!this.itemForm.get('text')?.value) this.itemForm.get('text')?.setValue(p.name);
-            if (p.description && !this.itemForm.get('comment')?.value)
-              this.itemForm.get('comment')?.setValue(p.description);
-          }
+          this.placeUpdatedTrigger(newPlace);
         },
       });
 
@@ -158,7 +160,7 @@ export class TripCreateDayItemModalComponent {
   }
 
   closeDialog() {
-    // Normalize data for API POST
+    if (!this.itemForm.valid) return;
     let ret = this.itemForm.value;
     if (!ret['lat']) {
       ret['lat'] = null;
@@ -175,6 +177,16 @@ export class TripCreateDayItemModalComponent {
       delete ret['attachments'];
     }
     this.ref.close(ret);
+  }
+
+  placeUpdatedTrigger(pid: number) {
+    const p: Place = this.places.find((p) => p.id === pid) as Place;
+    if (!p) return;
+    this.itemForm.get('lat')?.setValue(p.lat);
+    this.itemForm.get('lng')?.setValue(p.lng);
+    this.itemForm.get('price')?.setValue(p.price || 0);
+    if (!this.itemForm.get('text')?.value) this.itemForm.get('text')?.setValue(p.name);
+    if (p.description && !this.itemForm.get('comment')?.value) this.itemForm.get('comment')?.setValue(p.description);
   }
 
   togglePriceMembersPopover(e: any) {

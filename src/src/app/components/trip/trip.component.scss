@@ -3,15 +3,6 @@
     display: none;
     visibility: hidden;
   }
-
-  .print-striped-rows tr:nth-child(even) {
-    background-color: #f9f9f9 !important;
-  }
-
-  .print-striped-rows tr:nth-child(even) td:first-child.truncate {
-    //HACK: The "day" column is truncated
-    background-color: white !important;
-  }
 }
 
 .fullscreen-map {
@@ -22,4 +13,5 @@
   height: 100vh !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+  touch-action: pan-x pan-y pinch-zoom;
 }

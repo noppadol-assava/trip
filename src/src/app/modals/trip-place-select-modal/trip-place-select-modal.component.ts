@@ -4,17 +4,26 @@ import { ButtonModule } from 'primeng/button';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { FloatLabelModule } from 'primeng/floatlabel';
 import { InputTextModule } from 'primeng/inputtext';
-import { GoogleBoundaries, Place } from '../../types/poi';
+import { ProviderBoundaries, Place } from '../../types/poi';
 import { ApiService } from '../../services/api.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { UtilsService } from '../../services/utils.service';
 import { take } from 'rxjs';
 import { isPointInBounds } from '../../shared/map';
 import { TooltipModule } from 'primeng/tooltip';
+import { TabsModule } from 'primeng/tabs';
 
 @Component({
   selector: 'app-trip-place-select-modal',
-  imports: [FloatLabelModule, InputTextModule, ButtonModule, ReactiveFormsModule, SkeletonModule, TooltipModule],
+  imports: [
+    FloatLabelModule,
+    InputTextModule,
+    ButtonModule,
+    ReactiveFormsModule,
+    SkeletonModule,
+    TooltipModule,
+    TabsModule,
+  ],
   standalone: true,
   templateUrl: './trip-place-select-modal.component.html',
   styleUrl: './trip-place-select-modal.component.scss',
@@ -22,7 +31,7 @@ import { TooltipModule } from 'primeng/tooltip';
 export class TripPlaceSelectModalComponent {
   searchInput = new FormControl('');
   googleGeocodeInput = new FormControl('');
-  boundariesFiltering?: GoogleBoundaries;
+  boundariesFiltering?: ProviderBoundaries;
 
   selectedPlaces: Place[] = [];
   showSelectedPlaces: boolean = false;
@@ -129,12 +138,12 @@ export class TripPlaceSelectModalComponent {
     this.selectedPlacesID = [];
   }
 
-  gmapsGeocodeFilter() {
+  geocodeFilter() {
     const value = this.googleGeocodeInput.value;
     if (!value) return;
 
     this.apiService
-      .gmapsGeocodeBoundaries(value)
+      .completionGeocodeBoundaries(value)
       .pipe(take(1))
       .subscribe({
         next: (boundaries) => {

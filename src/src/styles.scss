@@ -1,10 +1,5 @@
+@use './tailwind.css';
 @use 'primeicons/primeicons.css';
-@plugin 'tailwindcss-primeui';
-@variant dark (&:where(.dark, .dark *));
-
-@layer tailwind {
-  @import 'tailwindcss';
-}
 
 * {
   scrollbar-width: thin;
@@ -27,6 +22,12 @@
   }
 }
 
+@media print {
+  .dark {
+    color-scheme: light !important;
+  }
+}
+
 html {
   font-size: 15px;
   font-family:
@@ -44,6 +45,7 @@ html {
   line-height: normal;
 }
 
+// Leaflet override et custom classes
 .class-tooltip {
   border-radius: 8px;
   text-align: center;
@@ -53,7 +55,7 @@ html {
     0 1px 2px 0 rgba(0, 0, 0, 0.06);
   width: 200px;
   white-space: pre-wrap;
-  @apply bg-white dark:bg-surface-900 dark:text-gray-300;
+  @apply bg-white dark:bg-primary-900 dark:text-primary-300;
 }
 
 .custom-cluster {
@@ -115,6 +117,82 @@ html {
   width: 24px;
 }
 
+.leaflet-overlay-pane svg {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.animated-path {
+  animation: dash 20s linear infinite;
+  stroke-dasharray: 3 20;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -1000;
+  }
+}
+
+.routing-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.routing-badge-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  @apply text-primary-100;
+  @apply dark:text-primary-800;
+  @apply py-2 px-2;
+  @apply rounded-lg;
+  @apply font-medium;
+  @apply whitespace-nowrap;
+}
+
+.routing-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  line-height: 1;
+  cursor: pointer;
+
+  i {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+}
+
+.route-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.route-animate {
+  animation: route-draw 2s ease-out forwards;
+}
+
+@keyframes route-draw {
+  from {
+    stroke-dasharray: 3000;
+    stroke-dashoffset: 3000;
+  }
+  to {
+    stroke-dasharray: 3000;
+    stroke-dashoffset: 0;
+  }
+}
+
+// Markers / Places custom classes
 .list-hover {
   .custom-cluster {
     background-color: red;
@@ -122,36 +200,6 @@ html {
   .marker-anchor {
     border: 3px dashed red !important;
   }
-}
-
-.table-colored-resizer .p-datatable-column-resizer {
-  width: 2px;
-  background-color: #999;
-}
-
-@media print {
-  .table-colored-resizer .p-datatable-column-resizer {
-    background-color: transparent;
-  }
-}
-
-@keyframes slide-y-centered-x {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(100px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-}
-
-.slide-y-centered-x {
-  animation: slide-y-centered-x 0.3s both normal;
-}
-
-.a-slide-y-centered-x {
-  animation: slide-y-centered-x 0.3s both reverse;
 }
 
 .place-box-dialog {
@@ -178,56 +226,16 @@ html {
   }
 }
 
-.custom-button {
-  appearance: button;
-  text-decoration: none;
-  background-color: #3851e1;
-  border-radius: 6px;
-  border-width: 0;
-  box-shadow:
-    rgba(50, 50, 93, 0.1) 0 0 0 1px inset,
-    rgba(50, 50, 93, 0.1) 0 2px 5px 0,
-    rgba(0, 0, 0, 0.07) 0 1px 1px 0;
-  box-sizing: border-box;
-  color: #fff;
-  cursor: pointer;
-  font-size: 100%;
-  height: 44px;
-  line-height: 1.15;
-  outline: none;
-  overflow: hidden;
-  padding: 0 25px;
-  position: relative;
-  text-align: center;
-  text-transform: none;
-  transform: translateZ(0);
-  transition:
-    all 0.2s,
-    box-shadow 0.08s ease-in;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-  width: 100%;
-  max-width: fit-content;
-
-  &.orange {
-    background-color: #f57340;
-  }
-
-  &:disabled {
-    cursor: default;
-    background-color: #a6a6a6;
-  }
-
-  &:focus {
-    box-shadow:
-      rgba(50, 50, 93, 0.1) 0 0 0 1px inset,
-      rgba(50, 50, 93, 0.2) 0 6px 15px 0,
-      rgba(0, 0, 0, 0.1) 0 2px 2px 0,
-      rgba(50, 151, 211, 0.3) 0 0 0 4px;
-  }
+.color-bg-opacity {
+  background: color-mix(in srgb, var(--color-bg-opacity) 10%, transparent);
+  color: var(--color-bg-opacity);
 }
 
+.dark .color-bg-opacity {
+  background: color-mix(in srgb, var(--color-bg-opacity) 20%, transparent);
+}
+
+// Animations
 @keyframes slide-x {
   0% {
     opacity: 0;
@@ -259,6 +267,17 @@ html {
   }
 }
 
+@keyframes slide-y-centered-x {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(100px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 @keyframes slide-from-y {
   0% {
     opacity: 0;
@@ -276,19 +295,6 @@ html {
   }
   100% {
     transform: translateY(0);
-  }
-}
-
-@keyframes toggle {
-  0% {
-    max-height: 0;
-    opacity: 0;
-    transition: all 300ms ease-in;
-  }
-  100% {
-    max-height: auto;
-    opacity: 1;
-    transition: all 300ms ease-out;
   }
 }
 
@@ -328,15 +334,15 @@ html {
   animation: slide-y-no-opacity 0.3s both reverse;
 }
 
-.expand {
-  animation: toggle 0.3s both normal;
+.slide-y-centered-x {
+  animation: slide-y-centered-x 0.3s both normal;
 }
 
-.collapse {
-  animation: toggle 0.3s both reverse;
-  overflow: hidden;
+.a-slide-y-centered-x {
+  animation: slide-y-centered-x 0.3s both reverse;
 }
 
-.p-datatable-table-container {
-  overscroll-behavior: auto;
+// https://github.com/primefaces/primeng/issues/17089...
+.p-inputgroup .p-floatlabel p-inputmask input {
+  width: 100%;
 }
