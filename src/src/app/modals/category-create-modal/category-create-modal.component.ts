@@ -1,5 +1,5 @@
-import { Component } from '@angular/core';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, HostListener } from '@angular/core';
+import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { FloatLabelModule } from 'primeng/floatlabel';
@@ -10,12 +10,27 @@ import { Category } from '../../types/poi';
 
 @Component({
   selector: 'app-category-create-modal',
-  imports: [FloatLabelModule, InputTextModule, ButtonModule, ColorPickerModule, ReactiveFormsModule, FocusTrapModule],
+  imports: [
+    FloatLabelModule,
+    InputTextModule,
+    FormsModule,
+    ButtonModule,
+    ColorPickerModule,
+    ReactiveFormsModule,
+    FocusTrapModule,
+  ],
   standalone: true,
   templateUrl: './category-create-modal.component.html',
   styleUrl: './category-create-modal.component.scss',
 })
 export class CategoryCreateModalComponent {
+  @HostListener('keydown.control.enter', ['$event'])
+  @HostListener('keydown.meta.enter', ['$event'])
+  onCtrlEnter(event: Event) {
+    event.preventDefault();
+    this.closeDialog();
+  }
+
   categoryForm: FormGroup;
   updatedImage = false;
 
@@ -41,9 +56,8 @@ export class CategoryCreateModalComponent {
   }
 
   closeDialog() {
-    // Normalize data for API POST
+    if (!this.categoryForm.valid) return;
     let ret = this.categoryForm.value;
-    if (!ret['name']) return;
     if (!this.updatedImage) delete ret['image'];
     this.ref.close(ret);
   }
@@ -67,5 +81,10 @@ export class CategoryCreateModalComponent {
   clearImage() {
     this.categoryForm.get('image')?.setValue(null);
     this.updatedImage = false;
+  }
+
+  updateColorFromPicker(value: string) {
+    this.categoryForm.get('color')?.setValue(value.toUpperCase());
+    this.categoryForm.get('color')?.markAsDirty();
   }
 }

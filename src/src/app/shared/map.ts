@@ -1,7 +1,7 @@
 import * as L from 'leaflet';
 import 'leaflet.markercluster';
 import 'leaflet-contextmenu';
-import { GoogleBoundaries, Place } from '../types/poi';
+import { ProviderBoundaries, Place } from '../types/poi';
 import { TripItem } from '../types/trip';
 
 export const DEFAULT_TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
@@ -24,6 +24,7 @@ export function createMap(contextMenuItems: ContextMenuItem[] = [], tilelayer: s
   const southWest = L.latLng(-89.99, -180);
   const northEast = L.latLng(89.99, 180);
   const bounds = L.latLngBounds(southWest, northEast);
+  const center: L.LatLngTuple = [48.86, 2.34];
 
   const map = L.map('map', {
     maxBoundsViscosity: 1.0,
@@ -31,11 +32,11 @@ export function createMap(contextMenuItems: ContextMenuItem[] = [], tilelayer: s
     contextmenu: true,
     contextmenuItems: contextMenuItems,
   } as MapOptions)
-    .setZoom(10)
+    .setView(center, 10)
     .setMaxBounds(bounds);
 
   L.tileLayer(tilelayer, {
-    maxZoom: 17,
+    maxZoom: 18,
     minZoom: 3,
     attribution:
       '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -45,7 +46,7 @@ export function createMap(contextMenuItems: ContextMenuItem[] = [], tilelayer: s
 }
 
 export function placeHoverTooltip(place: Place): string {
-  return `<div class="font-semibold mb-1 truncate" style="font-size:1.1em">${place.name}</div><div><span style="color:${place.category.color}; background:${place.category.color}1A;" class="text-xs font-medium px-2.5 py-0.5 rounded">${place.category.name}</span></div>`.trim();
+  return `<div class="font-semibold mb-1 truncate" style="font-size:1.1em">${place.name}</div><div><span style="--color-bg-opacity:${place.category.color};" class="color-bg-opacity text-xs font-medium px-2.5 py-0.5 rounded">${place.category.name}</span></div>`.trim();
 }
 
 export function createClusterGroup(): L.MarkerClusterGroup {
@@ -76,7 +77,7 @@ export function tripDayMarker(item: Partial<TripItem>): L.Marker {
   const touchDevice = 'ontouchstart' in window;
   if (!touchDevice) {
     marker.bindTooltip(
-      `<div class="text-xs text-gray-500">${item.time}</div><div class="font-semibold mb-1 truncate text-base">${item.text}</div>`,
+      `<div class="flex flex-col gap-1 items-center"><div class="w-fit px-2.5 py-1 text-xs font-mono font-medium bg-primary-100 dark:bg-primary-800 text-primary-700 dark:text-primary-300 rounded">${item.time}</div><div class="font-semibold mb-1 text-base">${item.text}</div></div>`,
       {
         direction: 'right',
         offset: [10, 0],
@@ -123,22 +124,22 @@ export function placeToMarker(
   isLowNet: boolean = true,
   grayscale: boolean = false,
   gpxInBubble: boolean = false,
+  rightClickFn: (() => void) | null = null,
 ): L.Marker {
   const options: Partial<L.MarkerOptions> = {
     riseOnHover: true,
     title: place.name,
-    alt: '',
   };
 
   const markerImage = isLowNet ? place.category.image : (place.image ?? place.category.image);
 
-  let markerClasses = 'w-full h-full rounded-full bg-center bg-cover bg-white dark:bg-surface-900';
+  let markerClasses = 'w-full h-full rounded-full bg-center bg-cover bg-white dark:bg-primary-900';
   if (grayscale) markerClasses += ' grayscale';
 
   const iconHtml = `
     <div class="flex items-center justify-center relative rounded-full marker-anchor size-14 box-border" style="border: 2px solid ${place.category.color};">
       <div class="${markerClasses}" style="background-image: url('${markerImage}');"></div>
-      ${gpxInBubble && place.gpx ? '<div class="absolute -top-1 -left-1 size-6 flex justify-center items-center bg-white dark:bg-surface-900 border-2 border-black rounded-full"><i class="pi pi-compass"></i></div>' : ''}
+      ${gpxInBubble && place.gpx ? '<div class="absolute -top-1 -left-1 size-6 flex justify-center items-center bg-white dark:bg-primary-900 border-2 border-black rounded-full"><i class="pi pi-compass"></i></div>' : ''}
     </div>
   `;
 
@@ -153,6 +154,7 @@ export function placeToMarker(
     icon,
   });
 
+  if (rightClickFn) marker.on('contextmenu', (e: L.LeafletMouseEvent) => rightClickFn());
   const touchDevice = 'ontouchstart' in window;
   if (!touchDevice) {
     marker.bindTooltip(placeHoverTooltip(place), {
@@ -176,7 +178,7 @@ export function gpxToPolyline(gpx: string): L.Polyline {
   return L.polyline(latlngs, { color: 'blue' });
 }
 
-export function isPointInBounds(lat: number, lng: number, bounds: GoogleBoundaries): boolean {
+export function isPointInBounds(lat: number, lng: number, bounds: ProviderBoundaries): boolean {
   if (!bounds || !bounds.northeast || !bounds.southwest) return false;
 
   const ne = bounds.northeast;
@@ -196,4 +198,29 @@ export function openNavigation(coordinates: L.LatLngLiteral[]) {
   const waypoints = coordinates.map((c) => `${c.lat},${c.lng}`).join('/');
   url += `${waypoints}`;
   window.open(url, '_blank');
+}
+
+export function getGeolocationLatLng(): Promise<{ lat?: number; lng?: number; err?: string }> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ err: 'Geolocation not supported in your browser' });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position: GeolocationPosition) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      (error) => {
+        console.error(error);
+        resolve({
+          err: `Error resolving your geolocation: ${error.message || 'check console for details'}`,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 5000 },
+    );
+  });
 }

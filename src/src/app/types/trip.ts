@@ -11,6 +11,10 @@ export interface TripBase {
   currency: string;
 }
 
+export interface TripBaseWithDates extends TripBase {
+  daterange?: Date[];
+}
+
 export interface Trip {
   id: number;
   name: string;
@@ -42,6 +46,7 @@ export interface TripDay {
   dt?: string;
   label: string;
   items: TripItem[];
+  notes?: string;
 }
 
 export interface TripItem {
@@ -119,4 +124,12 @@ export interface ChecklistItem {
   id: number;
   text: string;
   checked?: boolean;
+}
+
+export interface PrintOptions {
+  days: Set<number>;
+  props: Set<string>;
+  places: boolean;
+  notes: boolean;
+  metadata: boolean;
 }

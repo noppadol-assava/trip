@@ -47,11 +47,6 @@ def _prefix_assets_url(filename: str) -> str:
     return base + filename
 
 
-class AuthParams(BaseModel):
-    oidc: str | None
-    register_enabled: bool
-
-
 class TripItemStatusEnum(str, Enum):
     PENDING = "pending"
     CONFIRMED = "booked"
@@ -72,6 +67,16 @@ class BackupStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class MapProvider(str, Enum):
+    OPENSTREETMAP = "osm"
+    GOOGLE = "google"
+
+
+class AuthParams(BaseModel):
+    oidc: str | None
+    register_enabled: bool
 
 
 class TripShareURL(BaseModel):
@@ -97,6 +102,11 @@ class LatitudeLongitude(BaseModel):
     longitude: float
 
 
+class LatLng(BaseModel):
+    lat: float
+    lng: float
+
+
 class Token(BaseModel):
     access_token: str
     refresh_token: str
@@ -112,7 +122,7 @@ class TokenGoogleSearch(BaseModel):
     category: str | None = None
 
 
-class GooglePlaceResult(BaseModel):
+class ProviderPlaceResult(BaseModel):
     name: str | None = None
     place: str | None = None
     category: str | None = None
@@ -124,6 +134,22 @@ class GooglePlaceResult(BaseModel):
     types: list[str] = []
     image: str | None = None
     restroom: bool | None
+
+
+class ProviderBoundaries(BaseModel):
+    northeast: LatLng
+    southwest: LatLng
+
+
+class OSMRoutingQuery(BaseModel):
+    coordinates: list[LatLng]
+    profile: str
+
+
+class OSMRoutingResponse(BaseModel):
+    distance: float | None
+    duration: float | None
+    geometry: dict | None
 
 
 class ImageBase(SQLModel):
@@ -206,6 +232,7 @@ class UserBase(SQLModel):
     mode_display_visited: bool | None = False
     mode_map_position: bool | None = False
     api_token: str | None = None
+    duplicate_dist: int | None = None
 
 
 class User(UserBase, table=True):
@@ -214,6 +241,7 @@ class User(UserBase, table=True):
     totp_enabled: bool = False
     totp_secret: str | None = None
     google_apikey: str | None = None
+    map_provider: MapProvider = Field(default=MapProvider.OPENSTREETMAP)
 
 
 class UserUpdate(UserBase):
@@ -222,6 +250,7 @@ class UserUpdate(UserBase):
     currency: str | None = None
     do_not_display: list[str] | None = None
     google_apikey: str | None = None
+    map_provider: MapProvider | None = None
 
 
 class UserRead(UserBase):
@@ -230,6 +259,7 @@ class UserRead(UserBase):
     totp_enabled: bool
     google_apikey: bool
     api_token: bool
+    map_provider: str
 
     @classmethod
     def serialize(cls, obj: User) -> "UserRead":
@@ -248,6 +278,8 @@ class UserRead(UserBase):
             totp_enabled=obj.totp_enabled,
             google_apikey=True if obj.google_apikey else False,
             api_token=True if obj.api_token else False,
+            map_provider=obj.map_provider.value,
+            duplicate_dist=obj.duplicate_dist,
         )
 
 
@@ -336,7 +368,7 @@ class PlaceCreate(PlaceBase):
     category_id: int
 
 
-class PlacesCreate(PlaceBase):
+class TokenPlaceCreate(PlaceBase):
     image: str | None = None
     category: str
 
@@ -510,6 +542,7 @@ class TripInvitationRead(TripReadBase):
 class TripDayBase(SQLModel):
     label: str
     dt: date | None = None
+    notes: str | None = None
 
 
 class TripDay(TripDayBase, table=True):
@@ -532,6 +565,7 @@ class TripDayRead(TripDayBase):
             dt=obj.dt,
             label=obj.label,
             items=[TripItemRead.serialize(item) for item in obj.items],
+            notes=obj.notes,
         )
 
 

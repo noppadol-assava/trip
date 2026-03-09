@@ -12,6 +12,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Crucial for finding the common history
+          token: ${{ secrets.PAT_TOKEN }}
         # Add this step to configure the Git user
       - name: Configure Git user
         run: |
@@ -22,6 +23,15 @@ jobs:
           git remote add upstream https://github.com/itskovacs/trip
           git fetch upstream --tags
           git checkout main
-          git merge upstream/main -m "Merge upstream changes"
-          git push origin main
+
+          git merge upstream/main --no-commit --no-ff || true
+          git restore --source=HEAD --staged --worktree .github || true
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Merge upstream changes (exclude .github)"
+            git push origin main
+          else
+            echo "No changes to commit"
+          fi
+
           git push origin --tags
