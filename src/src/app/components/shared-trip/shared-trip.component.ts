@@ -170,6 +170,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   isArchiveWarningVisible = signal<boolean>(true);
   tooltipCopied = signal(false);
   selectedDay = signal<TripDay | null>(null);
+  isFullAccess = signal(false);
 
   panelWidth = signal<number | null>(null);
   panelDeltaX = 0;
@@ -180,7 +181,6 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   isPackingDialogVisible = false;
   isAttachmentsDialogVisible = false;
   isChecklistDialogVisible = false;
-  isBetaDialogVisible = true;
   selectedItemProps = signal<string[]>(['place', 'comment', 'price']);
 
   tripSharedURL$?: Observable<string>;
@@ -556,6 +556,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       const token = params.get('token');
       if (!token) return;
       this.token = token;
+      if (token.endsWith('ful')) this.isFullAccess.set(true);
       this.loadTripData(token);
     });
   }
@@ -766,9 +767,8 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
         {
           label: 'Attachments',
           icon: 'pi pi-paperclip',
-          command: () => {
-            this.openAttachmentsModal();
-          },
+          command: () => this.openAttachmentsModal(),
+          disabled: !this.isFullAccess(),
         },
         {
           label: 'Checklist',
@@ -848,7 +848,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       dismissableMask: true,
       draggable: false,
       resizable: false,
-      width: '20vw',
+      width: '30vw',
       breakpoints: {
         '960px': '70vw',
         '640px': '90vw',
@@ -867,7 +867,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       setTimeout(() => {
         window.print();
         this.printOptions.set(null);
-      }, 400); //increased after primeng21 migration
+      }, 600); //increased after primeng21 migration
     });
   }
 

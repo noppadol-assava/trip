@@ -29,6 +29,7 @@ import {
   TripMember,
   TripAttachment,
   PrintOptions,
+  SharedTripDetails,
 } from '../../types/trip';
 import { Category, Place } from '../../types/poi';
 import {
@@ -198,10 +199,9 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   isMembersDialogVisible = false;
   isAttachmentsDialogVisible = false;
   isChecklistDialogVisible = false;
-  isBetaDialogVisible = true;
   selectedItemProps = signal<string[]>(['place', 'comment', 'price']);
 
-  tripSharedURL$?: Observable<string>;
+  tripSharedDetails$?: Observable<SharedTripDetails>;
   username: string;
 
   places = computed(() => this.trip()?.places ?? []);
@@ -587,7 +587,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       const id = params.get('id');
       if (id) {
         this.loadTripData(+id);
-        this.tripSharedURL$ = this.apiService.getSharedTripURL(+id);
+        this.tripSharedDetails$ = this.apiService.getSharedTripDetails(+id);
       } else {
         this.router.navigate(['/trips']);
       }
@@ -2172,18 +2172,18 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     openNavigation(items.map((item) => ({ lat: item.lat!, lng: item.lng! })));
   }
 
-  getSharedTripURL() {
-    this.apiService.getSharedTripURL(this.trip()!.id).pipe(take(1)).subscribe();
+  getSharedTripDetails() {
+    this.apiService.getSharedTripDetails(this.trip()!.id).pipe(take(1)).subscribe();
   }
 
-  shareTrip() {
+  shareTrip(is_full_access = true) {
     this.apiService
-      .createSharedTrip(this.trip()!.id)
+      .createSharedTrip(this.trip()!.id, is_full_access)
       .pipe(take(1))
       .subscribe({
-        next: (url) => {
+        next: (resp) => {
           this.trip.update((t) => (t ? { ...t, shared: true } : null));
-          this.tripSharedURL$ = of(url);
+          this.tripSharedDetails$ = of(resp);
         },
       });
   }
@@ -2546,7 +2546,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
             const layer = this.routeManager.addRoute({
               id: this.routeManager.createRouteId(segment.start, segment.end, profile),
-              geometry: resp.geometry,
+              coordinates: resp.coordinates,
               distance: resp.distance ?? 0,
               duration: resp.duration ?? 0,
               profile,
@@ -2598,7 +2598,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
           this.utilsService.setLoading('');
           const layer = this.routeManager.addRoute({
             id: this.routeManager.createRouteId([from.lat!, from.lng!], [to.lat, to.lng], profile),
-            geometry: resp.geometry,
+            coordinates: resp.coordinates,
             distance: resp.distance ?? 0,
             duration: resp.duration ?? 0,
             profile,
