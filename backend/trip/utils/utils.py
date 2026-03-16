@@ -1,5 +1,6 @@
 import base64
 import logging
+import shutil
 from io import BytesIO
 from pathlib import Path
 from secrets import token_urlsafe
@@ -10,9 +11,10 @@ from fastapi import HTTPException, UploadFile
 from PIL import Image
 
 from .. import __version__
-from ..config import Settings
+from ..config import get_settings
+from .date import dt_utc
 
-settings = Settings()
+logger = logging.getLogger(__name__)
 
 
 def generate_urlsafe() -> str:
@@ -24,11 +26,11 @@ def generate_filename(format: str) -> str:
 
 
 def assets_folder_path() -> Path:
-    return Path(settings.ASSETS_FOLDER)
+    return Path(get_settings().ASSETS_FOLDER)
 
 
 def attachments_folder_path() -> Path:
-    return Path(settings.ATTACHMENTS_FOLDER)
+    return Path(get_settings().ATTACHMENTS_FOLDER)
 
 
 def attachments_trip_folder_path(trip_id: int | str) -> Path:
@@ -45,10 +47,12 @@ def b64img_decode(data: str) -> bytes:
 
 def remove_attachment(trip_id: int, filename: str):
     try:
-        att_fp = attachments_trip_folder_path(trip_id) / filename
-        if not att_fp.exists():
-            return
-        att_fp.unlink()
+        folder = attachments_trip_folder_path(trip_id)
+        att_fp = folder / filename
+        if att_fp.exists():
+            att_fp.unlink()
+        if folder.exists() and not any(folder.iterdir()):
+            folder.rmdir()
     except OSError:
         pass
 
@@ -57,7 +61,7 @@ def remove_backup(filename: str):
     if not filename:
         return
     try:
-        backup_fp = Path(settings.BACKUPS_FOLDER) / filename
+        backup_fp = Path(get_settings().BACKUPS_FOLDER) / filename
         if not backup_fp.exists():
             return
         backup_fp.unlink()
@@ -77,7 +81,7 @@ def remove_image(filename: str):
 
 async def httpx_get(link: str) -> str:
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (compatible; TRIP/1 PyJWKClient; +https://github.com/itskovacs/trip)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
         "Referer": link,
@@ -92,12 +96,12 @@ async def httpx_get(link: str) -> str:
         raise HTTPException(status_code=400, detail="Bad Request")
 
 
-async def download_file(link: str, raise_on_error: bool = False) -> str:
+async def download_file(link: str) -> tuple[str, int]:
     if not link[:4] == "http":
         raise HTTPException(status_code=400, detail="Bad Request")
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (compatible; TRIP/1 PyJWKClient; +https://github.com/itskovacs/trip)",
         "Accept": "image/*",
         "Accept-Language": "en-US,en;q=0.5",
         "Referer": link,
@@ -115,14 +119,13 @@ async def download_file(link: str, raise_on_error: bool = False) -> str:
             infer_extension = content_type.split("/")[1]
             if not infer_extension:
                 infer_extension = "jpg"
+            file_size = len(response.content)
             path = assets_folder_path() / generate_filename(infer_extension)
-            with open(path, "wb") as f:
-                f.write(response.content)
-            return str(path)
-    except Exception as e:
-        if raise_on_error:
-            raise HTTPException(status_code=400, detail=f"Failed to download file: {e}")
-        return ""
+            path.write_bytes(response.content)
+            return str(path), file_size
+    except Exception as exc:
+        logger.error(f"[IMAGE FETCH]: {exc}")
+        return "", 0
 
 
 async def check_update():
@@ -176,7 +179,7 @@ def patch_image(fp: str, size: int = 400) -> bool:
     return False
 
 
-def save_image_to_file(content: bytes, size: int = 600) -> str:
+def save_image_to_file(content: bytes, size: int = 600) -> tuple[str, int]:
     filepath = None
     try:
         with Image.open(BytesIO(content)) as im:
@@ -215,27 +218,27 @@ def save_image_to_file(content: bytes, size: int = 600) -> str:
             filename = generate_filename(image_ext)
             filepath = assets_folder_path() / filename
             im.save(filepath)
-
-            return filename
+            file_size = filepath.stat().st_size
+            return filename, file_size
 
     except Exception:
         if filepath and filepath.exists():
             filepath.unlink()
-    return ""
+    return "", 0
 
 
-async def save_attachment(trip_id: int, file: UploadFile) -> str:
+def save_attachment(trip_id: int, file: UploadFile) -> str:
     if file.content_type != "application/pdf":
         raise ValueError("Unsupported attachment format")
 
-    if file.size > settings.ATTACHMENT_MAX_SIZE:
+    if file.size > get_settings().ATTACHMENT_MAX_SIZE:
         raise ValueError("File size is above ATTACHMENT_MAX_SIZE")
 
     filename = generate_filename("pdf")
     filepath = attachments_trip_folder_path(trip_id) / filename
     try:
         with open(filepath, "wb") as buf:
-            while chunk := await file.read(8192):
+            while chunk := file.file.read(8192):
                 buf.write(chunk)
         return filename
     except Exception:
@@ -247,3 +250,14 @@ async def save_attachment(trip_id: int, file: UploadFile) -> str:
 def silence_http_logging():
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+def backup_file(fp: Path) -> str:
+    if not fp.exists():
+        return
+
+    ts = dt_utc().strftime("%Y%m%d_%H%M%S")
+    dst = fp.with_name(f"{fp.stem}{fp.suffix}_{ts}.backup")
+
+    shutil.copy2(fp, dst)
+    return dst
