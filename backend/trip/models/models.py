@@ -234,6 +234,7 @@ class BackupBase(SQLModel):
     filename: str | None = None
     error_message: str | None = None
     file_size: int | None = None
+    full: bool | None = None
 
 
 class Backup(BackupBase, table=True):
@@ -286,6 +287,7 @@ class UserBase(SQLModel):
     mode_map_position: bool | None = False
     api_token: str | None = None
     duplicate_dist: int | None = None
+    language: str | None = None
 
 
 class User(UserBase, table=True):
@@ -382,6 +384,7 @@ class UserRead(UserBase):
             map_provider=obj.map_provider.value,
             duplicate_dist=obj.duplicate_dist,
             is_admin=obj.is_admin if obj.is_admin else False,
+            language=obj.language if obj.language else "en",
         )
 
 

@@ -18,6 +18,7 @@ import {
   TripMember,
 } from '../types/trip';
 import { AdminUser, AppConfig, MagicLink } from '../types/admin';
+import { TranslocoService } from '@jsverse/transloco';
 
 const NO_AUTH_HEADER = {
   no_auth: '1',
@@ -34,7 +35,18 @@ export class ApiService {
 
   private settingsSubject = new BehaviorSubject<Settings | null>(null);
   public settings$: Observable<Settings | null> = this.settingsSubject.asObservable();
+
   private httpClient = inject(HttpClient);
+  private translocoService = inject(TranslocoService);
+
+  constructor() {
+    this.settings$.subscribe((settings) => {
+      const lang = settings?.language;
+      if (!lang) return;
+      if (this.translocoService.getActiveLang() == lang) return;
+      this.translocoService.setActiveLang(lang);
+    });
+  }
 
   getInfo(): Observable<Info> {
     return this.httpClient.get<Info>(this.apiBaseUrl + '/info');
@@ -116,7 +128,9 @@ export class ApiService {
   }
 
   getTripBalance(id: number): Observable<{ [user: string]: number }> {
-    return this.httpClient.get<{ [user: string]: number }>(`${this.apiBaseUrl}/trips/${id}/balance`);
+    return this.httpClient.get<{ [user: string]: number }>(`${this.apiBaseUrl}/trips/${id}/balance`, {
+      headers: { ignore_not_found: 'true' },
+    });
   }
 
   postTrip(trip: TripBase): Observable<TripBase> {
@@ -406,10 +420,32 @@ export class ApiService {
   }
 
   adminGetConfig(): Observable<AppConfig> {
-    return this.httpClient.get<AppConfig>(this.apiBaseUrl + '/admin/config');
+    return this.httpClient
+      .get<AppConfig>(this.apiBaseUrl + '/admin/config')
+      .pipe(map((config) => ({ ...config, ATTACHMENT_MAX_SIZE: config.ATTACHMENT_MAX_SIZE / (1024 * 1024) })));
   }
 
   adminPutConfig(config: Partial<AppConfig>): Observable<AppConfig> {
-    return this.httpClient.put<AppConfig>(this.apiBaseUrl + '/admin/config', { ...config });
+    return this.httpClient
+      .put<AppConfig>(this.apiBaseUrl + '/admin/config', { ...config })
+      .pipe(map((config) => ({ ...config, ATTACHMENT_MAX_SIZE: config.ATTACHMENT_MAX_SIZE / (1024 * 1024) })));
+  }
+
+  adminGetBackups(): Observable<Backup[]> {
+    return this.httpClient.get<Backup[]>(`${this.apiBaseUrl}/admin/backups`);
+  }
+
+  adminCreateBackup(): Observable<Backup> {
+    return this.httpClient.post<Backup>(`${this.apiBaseUrl}/admin/backups`, {});
+  }
+
+  adminDeleteBackup(backupId: number): Observable<null> {
+    return this.httpClient.delete<null>(`${this.apiBaseUrl}/admin/backups/${backupId}`);
+  }
+
+  adminDownloadBackup(backupId: number): Observable<Blob> {
+    return this.httpClient.get(`${this.apiBaseUrl}/admin/backups/${backupId}/download`, {
+      responseType: 'blob',
+    });
   }
 }

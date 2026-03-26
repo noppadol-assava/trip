@@ -164,6 +164,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
   hideOutOfBoundsPlaces = signal(false);
   tabsIndex = 0;
   refreshBackups = signal(false);
+  adminRefreshBackups = signal(false);
   activeCategories = signal<Set<string>>(new Set());
   loadingMessage = signal<string | null>(null);
 
@@ -837,6 +838,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     this.loadUsers();
     this.loadMagicLinks();
     this.loadConfig();
+    this.adminGetBackups();
     this.viewAdmin.set(true);
   }
 
@@ -1681,6 +1683,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
   toggleOutOfBoundsPlaces() {
     this.hideOutOfBoundsPlaces.update((v) => !v);
   }
+
   geocodeFilter() {
     const value = this.geocodeFilterInput.value;
     if (!value) return;
@@ -1847,7 +1850,6 @@ export class DashboardComponent implements OnInit, AfterViewInit {
         next: (config) => {
           this.adminConfig.set(config);
           this.adminConfigForm.patchValue(config);
-          console.log(this.adminConfigForm.value);
         },
         error: () => this.utilsService.toast('error', 'Error', 'Failed to load configuration'),
       });
@@ -1947,8 +1949,12 @@ export class DashboardComponent implements OnInit, AfterViewInit {
 
   saveConfig() {
     if (!this.adminConfigForm.valid) return;
+    const updatedConfig = { ...this.adminConfigForm.value };
+    if (updatedConfig.ATTACHMENT_MAX_SIZE != null)
+      updatedConfig.ATTACHMENT_MAX_SIZE = updatedConfig.ATTACHMENT_MAX_SIZE * 1024 * 1024;
+
     this.apiService
-      .adminPutConfig(this.adminConfigForm.value)
+      .adminPutConfig(updatedConfig)
       .pipe(take(1))
       .subscribe({
         next: (config) => {
@@ -1962,5 +1968,63 @@ export class DashboardComponent implements OnInit, AfterViewInit {
   resetConfigForm() {
     const current = this.adminConfig();
     if (current) this.adminConfigForm.patchValue(current);
+  }
+
+  adminGetBackups() {
+    this.apiService
+      .adminGetBackups()
+      .pipe(take(1))
+      .subscribe({
+        next: (backups) => {
+          this.backups.set(backups);
+          this.adminRefreshBackups.set(backups.some((b) => b.status === 'pending' || b.status === 'processing'));
+        },
+      });
+  }
+
+  adminCreateBackup() {
+    this.apiService
+      .adminCreateBackup()
+      .pipe(take(1))
+      .subscribe((backup) => {
+        this.backups.update((backups) => [...backups, backup]);
+      });
+
+    this.adminRefreshBackups.set(true);
+    interval(1000)
+      .pipe(takeWhile(() => this.adminRefreshBackups()))
+      .subscribe(() => {
+        this.adminGetBackups();
+      });
+  }
+
+  adminDownloadBackup(backup: Backup) {
+    this.apiService
+      .adminDownloadBackup(backup.id)
+      .pipe(take(1))
+      .subscribe({
+        next: (data) => {
+          const blob = new Blob([data], { type: 'application/zip' });
+          const url = window.URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.download = backup.filename!;
+          anchor.href = url;
+
+          document.body.appendChild(anchor);
+          anchor.click();
+
+          document.body.removeChild(anchor);
+          window.URL.revokeObjectURL(url);
+        },
+      });
+  }
+
+  adminDeleteBackup(backup: Backup) {
+    this.apiService
+      .adminDeleteBackup(backup.id)
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.backups.set(this.backups().filter((b) => b.id !== backup.id)),
+      });
   }
 }

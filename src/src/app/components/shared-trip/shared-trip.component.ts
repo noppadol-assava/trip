@@ -10,6 +10,7 @@ import {
   ViewChild,
   untracked,
   ElementRef,
+  ChangeDetectorRef,
 } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
@@ -28,6 +29,9 @@ import {
   ChecklistItem,
   TripAttachment,
   PrintOptions,
+  ViewTripItem,
+  DayViewModel,
+  HighlightData,
 } from '../../types/trip';
 import { Category, Place } from '../../types/poi';
 import {
@@ -58,32 +62,11 @@ import { generateTripCSVFile } from '../../shared/trip-base/csv';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FileSizePipe } from '../../shared/pipes/filesize.pipe';
 import { computeDistLatLng } from '../../shared/utils';
-import { TabsModule } from 'primeng/tabs';
+import { TabList, TabsModule } from 'primeng/tabs';
 import { PlaceBoxContentComponent } from '../../shared/place-box-content/place-box-content.component';
 import { PlaceListItemComponent } from '../../shared/place-list-item/place-list-item.component';
 import { TripPrettyPrintModalComponent } from '../../modals/trip-pretty-print-modal/trip-pretty-print-modal.component';
-
-interface ViewTripItem extends TripItem {
-  status?: TripStatus;
-  distance?: number;
-}
-
-interface DayViewModel {
-  day: TripDay;
-  items: ViewTripItem[];
-  stats: {
-    count: number;
-    cost: number;
-    hasPlaces: boolean;
-  };
-}
-
-interface HighlightData {
-  paths: { coords: [number, number][]; options: any }[];
-  markers: any[];
-  gpxData: string[];
-  bounds: [number, number][];
-}
+import { ToggleButtonModule } from 'primeng/togglebutton';
 
 const HIGHLIGHT_COLORS = [
   '#e6194b',
@@ -127,6 +110,7 @@ const MAX_MAP_INIT_RETRIES = 5;
     TabsModule,
     PlaceBoxContentComponent,
     PlaceListItemComponent,
+    ToggleButtonModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './shared-trip.component.html',
@@ -140,6 +124,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   @ViewChild('menuTripDayActions') menuTripDayActions!: Menu;
   @ViewChild('menuSelectedDayActions') menuSelectedDayActions!: Menu;
   @ViewChild('selectedPanel', { read: ElementRef }) selectedPanelRef?: ElementRef;
+  @ViewChild('selectedTabListRef') selectedTabListRef: TabList | undefined;
 
   mapInitRetries = 0;
   selectedPanelHeight = signal<number>(0);
@@ -150,6 +135,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   dialogService: DialogService;
   utilsService: UtilsService;
   clipboard: Clipboard;
+  changeDetectionRef: ChangeDetectorRef;
 
   trip = signal<Trip | null>(null);
   packingList = signal<PackingItem[]>([]);
@@ -170,6 +156,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   isArchiveWarningVisible = signal<boolean>(true);
   tooltipCopied = signal(false);
   selectedDay = signal<TripDay | null>(null);
+  isTextAndPlaceToggled = signal<boolean>(false);
   isFullAccess = signal(false);
 
   panelWidth = signal<number | null>(null);
@@ -355,11 +342,13 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     const markers: any[] = [];
     const gpxData: string[] = [];
     const bounds: [number, number][] = [];
+    const activePlaceIds = new Set<number>();
 
     const processItems = (items: TripItem[], color: string, isSingleDay: boolean) => {
       const coords: [number, number][] = [];
 
       for (const item of items) {
+        if (item.place?.id) activePlaceIds.add(item.place.id);
         const lat = item.lat || item.place?.lat;
         const lng = item.lng || item.place?.lng;
 
@@ -393,9 +382,10 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       if (day) processItems(day.items, '#0000FF', true);
     }
 
-    return bounds.length >= 2 || paths.length > 0 ? { paths, markers, gpxData, bounds } : null;
+    return bounds.length >= 2 || paths.length > 0 ? { paths, markers, gpxData, bounds, activePlaceIds } : null;
   });
   selectedItemPropsSet = computed(() => new Set(this.selectedItemProps()));
+  canToggleTextAndPlace = computed(() => this.selectedItemPropsSet().has('place'));
 
   menuTripExportItems: MenuItem[] = [
     {
@@ -443,6 +433,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     this.dialogService = inject(DialogService);
     this.utilsService = inject(UtilsService);
     this.clipboard = inject(Clipboard);
+    this.changeDetectionRef = inject(ChangeDetectorRef);
 
     this.statuses = this.utilsService.statuses;
     this.username = this.utilsService.loggedUser;
@@ -462,12 +453,29 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       const data = this.highlightLayerData();
 
       untracked(() => {
+        const activePlaceIds = data?.activePlaceIds || new Set<number>();
+        this.markers.forEach((marker: any, placeId) => {
+          const isHighlighted = activePlaceIds.has(placeId);
+          marker.isHighlightedPlace = isHighlighted;
+          const el = marker.getElement();
+          if (!el) return;
+
+          if (isHighlighted) el.classList.add('active-trip-place');
+          else el.classList.remove('active-trip-place');
+        });
+
         if (this.tripMapAntLayer) {
           this.map?.removeLayer(this.tripMapAntLayer);
           this.tripMapAntLayer = undefined;
         }
 
-        if (!data || !this.map) return;
+        const mapContainer = this.map?.getContainer();
+        if (!data || !this.map) {
+          if (mapContainer) mapContainer.classList.remove('leaflet-tripday-pane-highlighting');
+          return;
+        }
+
+        if (mapContainer) mapContainer.classList.add('leaflet-tripday-pane-highlighting');
 
         const layerGroup = L.featureGroup();
         data.paths.forEach((p) => {
@@ -481,6 +489,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
         });
         data.markers.forEach((item) => {
           const marker = tripDayMarker(item);
+          marker.on('add', (e: any) => e.target.getElement()?.classList.add('active-trip-marker'));
           marker.on('click', () => {
             if (this.selectedItem()?.id === item.id) {
               this.selectedItem.set(null);
@@ -497,13 +506,25 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
         data.gpxData.forEach((gpx) => layerGroup.addLayer(gpxToPolyline(gpx)));
 
         this.tripMapAntLayer = layerGroup;
-
         requestAnimationFrame(() => {
           if (this.tripMapAntLayer && this.map) {
             this.tripMapAntLayer.addTo(this.map);
             this.map.fitBounds(data.bounds, { padding: [30, 30], maxZoom: 16 });
           }
         });
+      });
+    });
+
+    effect(() => {
+      // fix p-tabs scroll state issues
+      const selection = this.dispSelectedPlace();
+      const activeIndex = this.selectedPlaceActiveTabIndex();
+
+      if (!selection || !this.selectedTabListRef) return;
+      requestAnimationFrame(() => {
+        (this.selectedTabListRef as any).updateButtonState();
+        const element = document.querySelector('[data-pc-name="tab"][data-p-active="true"]');
+        element?.scrollIntoView?.({ block: 'nearest' });
       });
     });
 
@@ -662,8 +683,12 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     allPlaces.forEach((place) => {
       const isUsed = usedIds.has(place.id);
       const marker = placeToMarker(place, false, !isUsed);
-      const itemsUsingPlace = itemsByPlaceId.get(place.id) || [];
+      marker.on('add', (e: any) => {
+        const el = e.target.getElement();
+        if (el && e.target.isHighlightedPlace) el.classList.add('active-trip-place');
+      });
 
+      const itemsUsingPlace = itemsByPlaceId.get(place.id) || [];
       marker.on('click', () => {
         this.selectedPlace.set(place);
         this.selectedItem.set(null);
@@ -863,11 +888,9 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     modal.onClose.pipe(take(1)).subscribe((data: PrintOptions | null) => {
       if (!data) return;
       this.printOptions.set(data);
-
-      setTimeout(() => {
-        window.print();
-        this.printOptions.set(null);
-      }, 600); //increased after primeng21 migration
+      this.changeDetectionRef.detectChanges();
+      window.print();
+      this.printOptions.set(null);
     });
   }
 
@@ -938,7 +961,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     handle.setPointerCapture(event.pointerId);
 
     const onMove = (e: PointerEvent) => {
-      const newWidth = Math.max(320, Math.min(800, this.panelDeltaWidth + (e.clientX - this.panelDeltaX)));
+      const newWidth = Math.max(320, Math.min(1280, this.panelDeltaWidth + (e.clientX - this.panelDeltaX)));
       this.panelWidth.set(newWidth);
     };
 
