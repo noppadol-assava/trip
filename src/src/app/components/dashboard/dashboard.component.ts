@@ -133,6 +133,7 @@ export interface MarkerOptions extends L.MarkerOptions {
 export class DashboardComponent implements OnInit, AfterViewInit {
   fileUploadTakeout = viewChild<ElementRef>('fileUploadTakeout');
   fileUploadKmz = viewChild<ElementRef>('fileUploadKmz');
+  searchInputEl = viewChild<ElementRef>('searchInputEl');
 
   apiService: ApiService;
   authService: AuthService;
@@ -791,13 +792,12 @@ export class DashboardComponent implements OnInit, AfterViewInit {
         '960px': '75vw',
         '640px': '90vw',
       },
-      data:
-        selected.trip_count
-          ? this.translocoService.translate('messages.confirm_deletion_desc_in_use', {
-              name: selected.name,
-              count: selected.trip_count,
-            })
-          : this.translocoService.translate('messages.confirm_deletion_desc', { name: selected.name }),
+      data: selected.trip_count
+        ? this.translocoService.translate('messages.confirm_deletion_desc_in_use', {
+            name: selected.name,
+            count: selected.trip_count,
+          })
+        : this.translocoService.translate('messages.confirm_deletion_desc', { name: selected.name }),
     })!;
 
     modal.onClose.subscribe({
@@ -958,6 +958,8 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     if (!this.viewPlacesListFiltering()) {
       this.searchInput.setValue('');
       this.resetGeocodeFilters();
+    } else {
+      setTimeout(() => this.searchInputEl()?.nativeElement.focus());
     }
   }
 

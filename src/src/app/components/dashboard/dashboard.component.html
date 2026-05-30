@@ -296,7 +296,7 @@
           <div class="grid gap-2 mt-3" animate.enter="slide-y" animate.leave="a-slide-y">
             <div class="relative">
               <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-primary-400 text-xs"></i>
-              <input type="text" [formControl]="searchInput" [placeholder]="t('common.actions.search')"
+              <input type="text" #searchInputEl [formControl]="searchInput" [placeholder]="t('common.actions.search')"
                 class="w-full h-9 pl-9 pr-3 bg-white dark:bg-primary-950 border border-primary-200 dark:border-primary-800 rounded-lg text-sm text-primary-900 dark:text-white placeholder:text-primary-400 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors" />
               @if (searchInput.value) {
               <div class="absolute right-2 top-1/2 -translate-y-1/2">
@@ -308,7 +308,7 @@
             <div class="relative">
               <i class="pi pi-google absolute left-3 top-1/2 -translate-y-1/2 text-primary-400 text-xs"></i>
               <input type="text" [formControl]="geocodeFilterInput" (keydown.enter)="geocodeFilter()"
-                [placeholder]="t('geocode_placeholder')"
+                [placeholder]="t('modals.places.search.geocode_placeholder')"
                 class="w-full h-9 pl-9 pr-3 bg-white dark:bg-primary-950 border border-primary-200 dark:border-primary-800 rounded-lg text-sm text-primary-900 dark:text-white placeholder:text-primary-400 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors" />
 
               @if (boundariesFiltering()) {
