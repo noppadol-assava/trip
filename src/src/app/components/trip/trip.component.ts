@@ -2540,7 +2540,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       header: this.translocoService.translate('common.fields.notes'),
       modal: true,
       closable: true,
-      dismissableMask: true,
+      dismissableMask: false,
       draggable: false,
       resizable: false,
       width: '30vw',
