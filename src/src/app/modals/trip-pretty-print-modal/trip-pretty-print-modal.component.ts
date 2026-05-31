@@ -6,10 +6,18 @@ import { FloatLabelModule } from 'primeng/floatlabel';
 import { TripDay } from '../../types/trip';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { TranslocoDirective } from '@jsverse/transloco';
 
 @Component({
   selector: 'app-trip-pretty-print-modal',
-  imports: [FloatLabelModule, ButtonModule, ReactiveFormsModule, MultiSelectModule, ToggleSwitchModule],
+  imports: [
+    FloatLabelModule,
+    ButtonModule,
+    ReactiveFormsModule,
+    MultiSelectModule,
+    ToggleSwitchModule,
+    TranslocoDirective,
+  ],
   standalone: true,
   templateUrl: './trip-pretty-print-modal.component.html',
   styleUrl: './trip-pretty-print-modal.component.scss',
@@ -44,6 +52,7 @@ export class TripPrettyPrintModalComponent {
       places: true,
       notes: true,
       metadata: true,
+      showBookings: true,
     });
 
     if (this.config.data) {

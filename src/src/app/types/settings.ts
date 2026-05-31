@@ -14,10 +14,12 @@ export interface Settings {
   google_apikey?: boolean | null;
   mode_display_visited?: boolean;
   mode_map_position?: boolean;
+  show_dog_tag?: boolean;
   api_token?: boolean;
   map_provider?: string;
   duplicate_dist?: number;
   is_admin?: boolean;
+  language?: string;
 }
 
 export interface ImportResponse {

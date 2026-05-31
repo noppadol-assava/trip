@@ -1,5 +1,6 @@
-import { Component, HostListener } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, HostListener, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs/operators';
 import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogService, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -22,6 +23,7 @@ import { checkAndParseLatLng, formatLatLng } from '../../shared/latlng-parser';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { PlaceCreateProviderModalComponent } from '../place-create-provider-modal/place-create-provider-modal.component';
 import { DialogModule } from 'primeng/dialog';
+import { TranslocoDirective } from '@jsverse/transloco';
 
 @Component({
   selector: 'app-place-create-modal',
@@ -42,6 +44,7 @@ import { DialogModule } from 'primeng/dialog';
     DialogModule,
     CommonModule,
     FormsModule,
+    TranslocoDirective,
   ],
   standalone: true,
   templateUrl: './place-create-modal.component.html',
@@ -61,10 +64,12 @@ export class PlaceCreateModalComponent {
   previous_image: string | null = null;
   showImageUrlDialog = false;
   imageUrl = '';
+  private apiService = inject(ApiService);
+  newLinkInput = signal('');
+  showDogTag = toSignal(this.apiService.settings$.pipe(map((s) => s?.show_dog_tag !== false)), { initialValue: true });
 
   constructor(
     private ref: DynamicDialogRef,
-    private apiService: ApiService,
     private utilsService: UtilsService,
     private dialogService: DialogService,
     private fb: FormBuilder,
@@ -102,10 +107,11 @@ export class PlaceCreateModalComponent {
       image: null,
       image_id: null,
       gpx: null,
+      links: [[]],
     });
 
     const patchValue = this.config.data?.place as Place | undefined;
-    if (patchValue) this.placeForm.patchValue(patchValue);
+    if (patchValue) this.placeForm.patchValue({ ...patchValue, links: patchValue.links ?? [] });
     this.placeForm
       .get('place')
       ?.valueChanges.pipe(takeUntilDestroyed())
@@ -151,9 +157,35 @@ export class PlaceCreateModalComponent {
       delete ret['image_id'];
     }
     if (ret['gpx'] == '1') delete ret['gpx'];
+    if (!ret['links']?.length) ret['links'] = null;
     ret['lat'] = +ret['lat'];
     ret['lng'] = +ret['lng'];
     this.ref.close(ret);
+  }
+
+  isValidUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  addLink(url: string) {
+    const trimmed = url.trim();
+    if (!trimmed || !this.isValidUrl(trimmed)) return;
+    const current: string[] = this.placeForm.get('links')?.value ?? [];
+    this.placeForm.get('links')?.setValue([...current, trimmed]);
+    this.placeForm.markAsDirty();
+    this.newLinkInput.set('');
+  }
+
+  removeLink(index: number) {
+    const current: string[] = [...(this.placeForm.get('links')?.value ?? [])];
+    current.splice(index, 1);
+    this.placeForm.get('links')?.setValue(current);
+    this.placeForm.markAsDirty();
   }
 
   _parseGoogleMapsPlaceUrl(url: string): void {

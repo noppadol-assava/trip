@@ -1,4 +1,4 @@
-import { Component, HostListener, ViewChild } from '@angular/core';
+import { Component, HostListener, signal, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -19,6 +19,7 @@ import { InputGroupAddonModule } from 'primeng/inputgroupaddon';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { ApiService } from '../../services/api.service';
 import { take } from 'rxjs';
+import { TranslocoDirective } from '@jsverse/transloco';
 
 @Component({
   selector: 'app-trip-create-day-item-modal',
@@ -39,6 +40,7 @@ import { take } from 'rxjs';
     InputGroupModule,
     InputGroupAddonModule,
     PopoverModule,
+    TranslocoDirective,
   ],
   standalone: true,
   templateUrl: './trip-create-day-item-modal.component.html',
@@ -60,6 +62,7 @@ export class TripCreateDayItemModalComponent {
   previous_image_id: number | null = null;
   previous_image: string | null = null;
   trip?: Trip;
+  newLinkInput = signal('');
 
   constructor(
     private ref: DynamicDialogRef,
@@ -75,7 +78,7 @@ export class TripCreateDayItemModalComponent {
       time: [
         '',
         {
-          validators: [Validators.required, Validators.pattern(/^([01]\d|2[0-3])(:[0-5]\d)?$/)],
+          validators: [Validators.pattern(/^([01]\d|2[0-3])(:[0-5]\d)?$/)],
         },
       ],
       text: ['', Validators.required],
@@ -102,6 +105,7 @@ export class TripCreateDayItemModalComponent {
       ],
       paid_by: null,
       attachments: [],
+      links: [[]],
     });
 
     const data = this.config.data;
@@ -115,6 +119,7 @@ export class TripCreateDayItemModalComponent {
           ...data.item,
           place: data.item.place?.id ?? null,
           attachments: data.item.attachments.map((a: TripAttachment) => a.id),
+          links: data.item.links ?? [],
         });
 
       if (data.selectedDayId) this.itemForm.get('day_id')?.setValue([data.selectedDayId]);
@@ -162,6 +167,7 @@ export class TripCreateDayItemModalComponent {
   closeDialog() {
     if (!this.itemForm.valid) return;
     let ret = this.itemForm.value;
+    if (!ret['time']) ret['time'] = null;
     if (!ret['lat']) {
       ret['lat'] = null;
       ret['lng'] = null;
@@ -176,6 +182,7 @@ export class TripCreateDayItemModalComponent {
       ret['attachment_ids'] = ret['attachments'];
       delete ret['attachments'];
     }
+    if (!ret['links']?.length) ret['links'] = null;
     this.ref.close(ret);
   }
 
@@ -258,6 +265,31 @@ export class TripCreateDayItemModalComponent {
   clearGPX() {
     this.itemForm.get('gpx')?.setValue(null);
     this.itemForm.get('gpx')?.markAsDirty();
+  }
+
+  isValidUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  addLink(url: string) {
+    const trimmed = url.trim();
+    if (!trimmed || !this.isValidUrl(trimmed)) return;
+    const current: string[] = this.itemForm.get('links')?.value ?? [];
+    this.itemForm.get('links')?.setValue([...current, trimmed]);
+    this.itemForm.markAsDirty();
+    this.newLinkInput.set('');
+  }
+
+  removeLink(index: number) {
+    const current: string[] = [...(this.itemForm.get('links')?.value ?? [])];
+    current.splice(index, 1);
+    this.itemForm.get('links')?.setValue(current);
+    this.itemForm.markAsDirty();
   }
 
   onFileUploadInputChange(event: Event) {

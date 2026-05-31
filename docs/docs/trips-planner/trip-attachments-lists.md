@@ -3,8 +3,6 @@ sidebar_position: 9
 description: Your trip can hold attachments, a checklist, a packing list
 ---
 
-> NEED REVIEW
-
 # Trip - Attachments & lists
 
 :::note[TL;DR]

@@ -11,10 +11,11 @@ import { TripBase } from '../../types/trip';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PopoverModule } from 'primeng/popover';
 import { YesNoModalComponent } from '../yes-no-modal/yes-no-modal.component';
+import { TranslocoDirective } from '@jsverse/transloco';
 
 @Component({
   selector: 'app-multi-places-create-modal',
-  imports: [ButtonModule, DialogModule, PopoverModule],
+  imports: [ButtonModule, DialogModule, PopoverModule, TranslocoDirective],
   standalone: true,
   templateUrl: './multi-places-create-modal.component.html',
   styleUrl: './multi-places-create-modal.component.scss',
@@ -27,6 +28,7 @@ export class MultiPlacesCreateModalComponent {
   config = inject(DynamicDialogConfig);
   utilsService = inject(UtilsService);
 
+  showDogTag = toSignal(this.apiService.settings$.pipe(map((s) => s?.show_dog_tag !== false)), { initialValue: true });
   categories = toSignal(this.apiService.getCategories(), { initialValue: [] as Category[] });
   places = signal<Place[]>([]);
   isTripsDialogVisible = signal(false);
