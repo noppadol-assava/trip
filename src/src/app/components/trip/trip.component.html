@@ -134,20 +134,22 @@
                 <div class="flex gap-1">
                   <span
                     class="flex items-center gap-1.5 rounded px-2.5 py-1 w-fit text-xs font-semibold text-primary-600 bg-primary-100 dark:bg-primary-800 dark:text-primary-200">
-                    <i class="pi pi-calendar text-[10px]"></i>{{ trip()?.days?.length }}</span>
+                    <i class="pi pi-calendar text-[10px]!"></i>{{ trip()?.days?.length }}</span>
 
                   @if (totalPrice()) {
                   <span
-                    class="flex items-center gap-1.5 rounded px-2.5 py-1 w-fit text-xs font-semibold text-primary-600 bg-primary-100 dark:bg-primary-800 dark:text-primary-200">
-                    <i class="pi pi-wallet text-[10px]"></i> {{ (totalPrice() | number: '1.0-2') || '-' }}
-                    {{ trip()?.currency }}
+                    class="flex items-center gap-1.5 rounded px-2.5 py-1 max-w-28 text-xs font-semibold text-primary-600 bg-primary-100 dark:bg-primary-800 dark:text-primary-200">
+                    <i class="pi pi-wallet text-[10px]!"></i>
+                    <span class="truncate min-w-0">
+                      {{ (totalPrice() | number: '1.0-2') || '-' }} {{ trip()?.currency }}
+                    </span>
                   </span>
                   }
 
                   @if (tripMembers().length > 1) {
                   <span
                     class="flex items-center gap-1.5 rounded px-2.5 py-1 w-fit text-xs font-semibold text-primary-600 bg-primary-100 dark:bg-primary-800 dark:text-primary-200">
-                    <i class="pi pi-users text-[10px]"></i>{{ tripMembers().length }}</span>
+                    <i class="pi pi-users text-[10px]!"></i>{{ tripMembers().length }}</span>
                   }
                 </div>
               </div>
@@ -224,16 +226,19 @@
               }
 
               @if (isFilteringMode()) {
-              <div class="z-30 mt-3 grid sm:grid-cols-3 gap-2" animate.enter="slide-y" animate.leave="a-slide-y">
+              <div class="z-30 mt-3 grid grid-cols-2 gap-2" animate.enter="slide-y" animate.leave="a-slide-y">
                 <p-multiselect display="chip" fluid [options]="availableItemProps" [(ngModel)]="selectedItemProps"
-                  [placeholder]="t('common.fields.cols')"
-                  [class]="canToggleTextAndPlace() ? 'sm:col-span-2' : 'sm:col-span-3'" appendTo="body" size="small" />
+                  [placeholder]="t('common.fields.cols')" class="col-span-full" appendTo="body" size="small" />
 
                 @if (canToggleTextAndPlace()) {
                 <p-togglebutton [onLabel]="t('view.on_show_text')" [offLabel]="t('view.off_show_text')" size="small"
                   [ngModel]="isTextAndPlaceToggled()" (ngModelChange)="isTextAndPlaceToggled.set($event)"
                   [pt]="{ content: 'min-w-0', label: 'truncate' }" />
                 }
+
+                <p-togglebutton [onLabel]="t('view.on_show_bookings')" [offLabel]="t('view.off_show_bookings')"
+                  size="small" [ngModel]="showBookings()" (ngModelChange)="showBookings.set($event)"
+                  [pt]="{ content: 'min-w-0', label: 'truncate' }" />
 
                 <div class="relative col-span-full">
                   <input pInputText [formControl]="plansSearchInput" [placeholder]="t('common.actions.search')"
@@ -284,6 +289,8 @@
                       group.stats.cost | number: '1.0-0' }} {{ trip()?.currency }}
                     </span>
                     }
+                    <p-button icon="pi pi-plus" text size="small" [disabled]="trip()?.archived"
+                      (click)="addItem(group.day.id); $event.stopPropagation()" />
                     <p-button icon="pi pi-ellipsis-h"
                       (click)="openMenuPlanDayActionsItems($event, group.day); $event.stopPropagation()" text
                       size="small" />
@@ -291,12 +298,14 @@
                 </div>
               </div>
 
-              <div class="pl-4 md:pr-4">
-                <div class="flex flex-wrap gap-1.5">
-                  @for (booking of group.day.bookings ?? []; track booking.id) {
-                  <span (click)="openBookingModal(group.day, booking); $event.stopPropagation()"
+              @if (showBookings()) {
+              <div class="pl-4 md:pr-4 min-w-0 overflow-x-auto">
+                <div class="flex gap-1.5">
+                  @for (booking of sortBookings(group.day.bookings ?? []); track booking.id) {
+                  <span (click)="!trip()?.archived && openBookingModal(group.day, booking); $event.stopPropagation()"
                     class="cursor-pointer flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors"
-                    [class]="bookingTypeClass(booking.type)">
+                    [class]="bookingTypeClass(booking.type)" [class.opacity-60]="trip()?.archived"
+                    [class.cursor-not-allowed]="trip()?.archived">
                     {{ bookingTypeIcon(booking.type) }} {{ booking.label }}
                     @if (booking.reference) {
                     <span class="opacity-60">&middot; {{ booking.reference }}</span>
@@ -312,6 +321,7 @@
                   }
                 </div>
               </div>
+              }
 
               <div class="space-y-2 pl-4 md:pr-4">
                 @for (item of group.items; track item.id) {
@@ -467,8 +477,8 @@
       class="pointer-events-none fixed top-18 bottom-4 right-4 z-30 flex w-[calc(100%-2rem)] flex-col gap-3 print:hidden md:w-64 lg:w-88">
       @if (isDaysPanelVisible()) {
       <div animate.enter="slide-y-no-opacity" animate.leave="a-slide-y"
-        class="pointer-events-auto relative min-h-0 rounded-lg overflow-hidden shadow-2xl ring-1 ring-black/5 dark:ring-white/10 bg-white/80 dark:bg-primary-900/80 backdrop-blur-2xl flex flex-col overflow-y-auto p-4 max-h-[400px]"
-        [class]="isPlacesPanelVisible() ? 'h-1/3' : 'h-auto'">
+        class="pointer-events-auto relative min-h-0 rounded-lg overflow-hidden shadow-2xl ring-1 ring-black/5 dark:ring-white/10 bg-white/80 dark:bg-primary-900/80 backdrop-blur-2xl flex flex-col overflow-y-auto p-4 transition-all duration-300"
+        [class]="isPlacesPanelVisible() ? 'h-1/3' : 'h-full'">
         <div class="space-y-2 pt-1">
           @defer {
           @if (!trip()?.archived) {
@@ -785,8 +795,8 @@
                     class="text-xs font-semibold uppercase tracking-wide text-primary-500 dark:text-primary-400 mb-1">{{
                     t('common.fields.comment') }}</span>
                   <div
-                    class="border-l-3 border-primary-300 dark:border-primary-700 pl-3 py-1 text-sm text-primary-700 dark:text-primary-300 whitespace-pre-wrap leading-relaxed"
-                    [innerHTML]="item.comment | linkify"></div>
+                    class="border-l-3 border-primary-300 dark:border-primary-700 pl-3 py-1 text-sm text-primary-700 dark:text-primary-300 markdown-content leading-relaxed"
+                    [innerHTML]="item.comment | markdown"></div>
                 </div>
                 }
 
@@ -797,11 +807,7 @@
                     t('common.fields.links') }}</span>
                   <div class="flex flex-wrap gap-1.5">
                     @for (link of item.links; track link) {
-                    <a [href]="link" target="_blank" rel="noopener noreferrer"
-                      class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors">
-                      <i class="pi pi-external-link text-xs!"></i>
-                      {{ getDomain(link) }}
-                    </a>
+                    <app-link-chip [url]="link" />
                     }
                   </div>
                 </div>
@@ -833,14 +839,8 @@
                 </div>
                 }
 
-                @if (item.image) {
-                <div class="flex flex-col mt-4">
-                  <span
-                    class="text-xs font-semibold uppercase tracking-wide text-primary-500 dark:text-primary-400 mb-1">{{
-                    t('common.fields.image') }}
-                  </span>
-                  <img [src]="item.image" class="w-full rounded-lg object-cover" loading="lazy" />
-                </div>
+                @if (item.images?.length) {
+                <app-item-gallery [images]="item.images!" [coverId]="item.image_id" />
                 }
 
                 @if (item.gpx) {
@@ -850,8 +850,10 @@
                     t('common.fields.gpx') }}
                   </span>
                   <div class="flex gap-2">
-                    <p-button disabled icon="pi pi-compass" [label]="t('common.actions.display')"
-                      [pTooltip]="t('common.status.wip')" text />
+                    <p-button (click)="toggleItemGPX(item)"
+                      [icon]="displayedItemGpxId() === item.id ? 'pi pi-eye-slash' : 'pi pi-compass'"
+                      [label]="displayedItemGpxId() === item.id ? t('common.actions.hide') : t('common.actions.display')"
+                      text />
                     <p-button (click)="downloadItemGPX()" icon="pi pi-download" [label]="t('common.actions.download')"
                       text />
                   </div>
@@ -991,8 +993,8 @@
             <span class="text-xs font-semibold uppercase tracking-wide text-primary-500 dark:text-primary-400 mb-1">{{
               t('common.fields.comment') }}</span>
             <div
-              class="border-l-3 border-primary-300 dark:border-primary-700 pl-3 py-1 text-sm text-primary-700 dark:text-primary-300 whitespace-pre-wrap leading-relaxed"
-              [innerHTML]="item.comment | linkify"></div>
+              class="border-l-3 border-primary-300 dark:border-primary-700 pl-3 py-1 text-sm text-primary-700 dark:text-primary-300 markdown-content leading-relaxed"
+              [innerHTML]="item.comment | markdown"></div>
           </div>
           }
 
@@ -1002,11 +1004,7 @@
               t('common.fields.links') }}</span>
             <div class="flex flex-wrap gap-1.5">
               @for (link of item.links; track link) {
-              <a [href]="link" target="_blank" rel="noopener noreferrer"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors">
-                <i class="pi pi-external-link text-xs!"></i>
-                {{ getDomain(link) }}
-              </a>
+              <app-link-chip [url]="link" />
               }
             </div>
           </div>
@@ -1045,13 +1043,8 @@
           </div>
           }
 
-          @if (item.image) {
-          <div class="flex flex-col mt-4">
-            <span class="text-xs font-semibold uppercase tracking-wide text-primary-500 dark:text-primary-400 mb-1">{{
-              t('common.fields.image') }}
-            </span>
-            <img [src]="item.image" class="w-full rounded-lg object-cover" loading="lazy" />
-          </div>
+          @if (item.images?.length) {
+          <app-item-gallery [images]="item.images!" [coverId]="item.image_id" />
           }
 
           @if (item.gpx) {
@@ -1060,8 +1053,10 @@
               t('common.fields.gpx') }}
             </span>
             <div class="flex gap-2">
-              <p-button disabled icon="pi pi-compass" [label]="t('common.actions.display')"
-                [pTooltip]="t('common.status.wip')" text />
+              <p-button (click)="toggleItemGPX(item)"
+                [icon]="displayedItemGpxId() === item.id ? 'pi pi-eye-slash' : 'pi pi-compass'"
+                [label]="displayedItemGpxId() === item.id ? t('common.actions.hide') : t('common.actions.display')"
+                text />
               <p-button (click)="downloadItemGPX()" icon="pi pi-download" [label]="t('common.actions.download')" text />
             </div>
           </div>
@@ -1149,8 +1144,8 @@
             <span
               class="text-xs font-semibold uppercase tracking-wide text-primary-500 dark:text-primary-400 mb-1">Notes</span>
             <div
-              class="border-l-3 border-primary-300 dark:border-primary-700 pl-3 py-1 text-sm text-primary-700 dark:text-primary-300 whitespace-pre-wrap leading-relaxed"
-              [innerHTML]="day.notes | linkify"></div>
+              class="border-l-3 border-primary-300 dark:border-primary-700 pl-3 py-1 text-sm text-primary-700 dark:text-primary-300 markdown-content leading-relaxed"
+              [innerHTML]="day.notes | markdown"></div>
           </div>
           }
 
@@ -1314,31 +1309,37 @@
               <div class="hidden shrink-0 sm:flex sm:flex-col sm:items-end">
                 @if (!m.invited_at) {
                 <span
-                  class="text-center bg-red-100 text-red-800 text-xs px-2.5 py-0.5 rounded-md group-hover:hidden dark:bg-red-100/85">Owner</span>
+                  class="text-center bg-red-100 text-red-800 text-xs px-2.5 py-0.5 rounded-md dark:bg-red-100/85">{{ t('trips.roles.owner') }}</span>
                 }
 
                 @if (m.invited_at && !m.joined_at) {
                 <span
-                  class="text-center bg-primary-100 text-primary-800 text-xs px-2.5 py-0.5 rounded-md group-hover:hidden dark:bg-primary-100/85">Invited</span>
+                  class="text-center bg-primary-100 text-primary-800 text-xs px-2.5 py-0.5 rounded-md dark:bg-primary-100/85">{{ t('trips.roles.invited') }}</span>
                 }
 
                 @if (m.joined_at) {
                 <span
-                  class="text-center bg-blue-100 text-blue-800 text-xs px-2.5 py-0.5 rounded-md group-hover:hidden dark:bg-blue-100/85">Member</span>
+                  class="text-center bg-blue-100 text-blue-800 text-xs px-2.5 py-0.5 rounded-md dark:bg-blue-100/85">{{ t('trips.roles.member') }}</span>
                 }
               </div>
             </div>
           </div>
 
           <div class="flex items-center gap-2">
-            <span [class]="
+            <div class="flex flex-col gap-1">
+              <span class="bg-primary-100 text-primary-800 text-center text-xs px-2.5 py-0.5 rounded-md">{{
+                m.paid ? (m.paid | number:'1.2-2') : '-' }} {{
+                trip()?.currency }}</span>
+
+              <span [class]="
               m.balance
                 ? m.balance > 0
                   ? 'bg-green-100 text-green-800'
                   : 'bg-red-100 text-red-800'
                 : 'bg-primary-100 text-primary-800'
-            " class="text-center text-xs px-2.5 py-0.5 rounded-md group-hover:hidden">{{ m.balance || '-' }} {{
-              trip()?.currency }}</span>
+            " class="text-center text-xs px-2.5 py-0.5 rounded-md">{{ m.balance ? (m.balance |
+                number:'1.2-2') : '-' }} {{ trip()?.currency }}</span>
+            </div>
 
             @if (m.invited_at) {
             <p-button text (click)="deleteMember(m.user)" [disabled]="trip()?.archived" icon="pi pi-trash"
@@ -1357,6 +1358,8 @@
         <p-button (click)="fileUpload.click()" [disabled]="trip()?.archived" icon="pi pi-file-import"
           [label]="t('entities.attachment.add')" text />
         <input type="file" style="display: none" (change)="onFileUploadInputChange($event)" #fileUpload />
+        <p-button (click)="downloadAllAttachments()" [disabled]="!trip()?.attachments?.length" icon="pi pi-download"
+          [label]="t('entities.attachment.download_all')" text />
       </div>
 
       <div class="grid md:grid-cols-2 xl:grid-cols-3 gap-2 mt-2 pb-4">
@@ -1596,9 +1599,8 @@
 
           @if (options?.showBookings && group.day.bookings?.length) {
           <div class="mb-2 flex gap-1">
-            @for (booking of (group.day.bookings ?? []); track booking.id) {
-            <span
-              class="flex items-center w-fit px-2.5 py-1 text-xs font-mono font-medium bg-primary-100 text-primary-700 rounded"
+            @for (booking of sortBookings(group.day.bookings ?? []); track booking.id) {
+            <span class="flex items-center w-fit px-2.5 py-1 text-xs font-mono font-medium rounded"
               [class]="bookingTypeClass(booking.type)">{{ bookingTypeIcon(booking.type) }} {{ booking.label }}
               @if (booking.reference) {
               <span class="opacity-60">&middot; {{ booking.reference }}</span>
@@ -1612,7 +1614,7 @@
           }
 
           @for (item of group.items; track item.id) {
-          <div class="flex gap-4 items-center rounded-lg p-3 -mx-3">
+          <div class="flex gap-4 items-start rounded-lg p-3 -mx-3 break-inside-avoid">
             @if (item.time) {
             <span class="px-2.5 py-1 text-xs font-mono font-medium bg-primary-100 text-primary-700 rounded">{{
               item.time }}</span>
@@ -1637,6 +1639,14 @@
 
               @if (options?.props?.has('comment') && item.comment) {
               <p class="text-sm text-primary-500 whitespace-pre-wrap italic">{{ item.comment }}</p>
+              }
+
+              @if (options?.images && item.images?.length) {
+              <div class="flex flex-wrap gap-2 mt-2">
+                @for (img of item.images; track img.id) {
+                <img [src]="img.url" class="size-24 rounded-lg object-cover" />
+                }
+              </div>
               }
             </div>
 

@@ -11,6 +11,7 @@ import {
   SharedTripDetails,
   Trip,
   TripAttachment,
+  TripBalanceEntry,
   TripBase,
   TripBooking,
   TripDay,
@@ -59,9 +60,9 @@ export class ApiService {
 
   getCategories(): Observable<Category[]> {
     if (!this.categoriesSubject.value) {
-      return this.httpClient.get<Category[]>(`${this.apiBaseUrl}/categories`).pipe(
-        tap((categories) => this._categoriesSubjectNext(categories)),
-      );
+      return this.httpClient
+        .get<Category[]>(`${this.apiBaseUrl}/categories`)
+        .pipe(tap((categories) => this._categoriesSubjectNext(categories)));
     }
     return this.categories$ as Observable<Category[]>;
   }
@@ -81,7 +82,7 @@ export class ApiService {
     return this.httpClient.put<Category>(this.apiBaseUrl + `/categories/${c_id}`, c).pipe(
       tap((category) => {
         const categories = this.categoriesSubject.value || [];
-        const idx = categories?.findIndex((c) => c.id == c_id) || -1;
+        const idx = categories.findIndex((c) => c.id == c_id);
         if (idx > -1) {
           const updated = [...categories];
           updated[idx] = category;
@@ -95,7 +96,7 @@ export class ApiService {
     return this.httpClient.delete<{}>(this.apiBaseUrl + `/categories/${category_id}`).pipe(
       tap(() => {
         const categories = this.categoriesSubject.value || [];
-        const idx = categories?.findIndex((c) => c.id == category_id) || -1;
+        const idx = categories.findIndex((c) => c.id == category_id);
         if (idx > -1) {
           const updated = categories.filter((_, i) => i != idx);
           this._categoriesSubjectNext(updated);
@@ -132,8 +133,8 @@ export class ApiService {
     return this.httpClient.get<Trip>(`${this.apiBaseUrl}/trips/${id}`);
   }
 
-  getTripBalance(id: number): Observable<{ [user: string]: number }> {
-    return this.httpClient.get<{ [user: string]: number }>(`${this.apiBaseUrl}/trips/${id}/balance`, {
+  getTripBalance(id: number): Observable<{ [user: string]: TripBalanceEntry }> {
+    return this.httpClient.get<{ [user: string]: TripBalanceEntry }>(`${this.apiBaseUrl}/trips/${id}/balance`, {
       headers: { ignore_not_found: 'true' },
     });
   }
@@ -330,6 +331,18 @@ export class ApiService {
     });
   }
 
+  downloadAllTripAttachments(tripId: number): Observable<Blob> {
+    return this.httpClient.get(`${this.apiBaseUrl}/trips/${tripId}/attachments/download-all`, {
+      responseType: 'blob',
+    });
+  }
+
+  downloadAllSharedTripAttachments(token: string): Observable<Blob> {
+    return this.httpClient.get(`${this.apiBaseUrl}/trips/shared/${token}/attachments/download-all`, {
+      responseType: 'blob',
+    });
+  }
+
   getBackups(): Observable<Backup[]> {
     return this.httpClient.get<Backup[]>(`${this.apiBaseUrl}/settings/backups`);
   }
@@ -353,7 +366,7 @@ export class ApiService {
   }
 
   disableTOTP(code: string): Observable<{}> {
-    return this.httpClient.delete<{}>(this.apiBaseUrl + `/settings/totp/${code}`);
+    return this.httpClient.delete<{}>(this.apiBaseUrl + '/settings/totp', { body: { code } });
   }
 
   verifyTOTP(code: string): Observable<any> {
@@ -414,6 +427,10 @@ export class ApiService {
     return this.httpClient
       .post<{ temporary: string }>(this.apiBaseUrl + `/admin/users/${username}/reset-password`, {})
       .pipe(map((resp) => resp.temporary));
+  }
+
+  adminResetUserTotp(username: string): Observable<{}> {
+    return this.httpClient.post<{}>(this.apiBaseUrl + `/admin/users/${username}/reset-totp`, {});
   }
 
   adminGetMagic(): Observable<MagicLink[]> {

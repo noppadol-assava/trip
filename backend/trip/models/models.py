@@ -5,7 +5,8 @@ from types import SimpleNamespace
 from typing import Annotated
 
 from pydantic import BaseModel, StringConstraints, field_validator
-from sqlalchemy import JSON, Column, Index, MetaData, UniqueConstraint, event, select
+from sqlalchemy import (JSON, Column, Index, MetaData, UniqueConstraint, event,
+                        select)
 from sqlalchemy.orm import Session, object_session
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -60,6 +61,8 @@ class BookingTypeEnum(str, Enum):
     car = "car"
     hotel = "hotel"
     activity = "activity"
+    train = "train"
+    boat = "boat"
     generic = "generic"
 
 
@@ -99,7 +102,7 @@ class LoginRegisterModel(BaseModel):
 
 class UpdateUserPassword(BaseModel):
     current: str
-    updated: str
+    updated: Annotated[str, StringConstraints(min_length=8)]
     code: str | None = None
 
 
@@ -228,6 +231,15 @@ class Image(ImageBase, table=True):
     tripitems: list["TripItem"] = Relationship(back_populates="image")
 
 
+class ImageRead(BaseModel):
+    id: int
+    url: str
+
+    @classmethod
+    def serialize(cls, obj: Image) -> "ImageRead":
+        return cls(id=obj.id, url=_prefix_assets_url(obj.filename))
+
+
 @event.listens_for(Image, "after_delete")
 def mark_image_for_deletion(mapper, connection, target: Image):
     session = object_session(target)
@@ -281,6 +293,11 @@ class BackupRead(BackupBase):
             status=obj.status,
             user=obj.user,
         )
+
+
+class DataMigration(SQLModel, table=True):
+    name: str = Field(primary_key=True)
+    applied_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class UserBase(SQLModel):
@@ -703,6 +720,11 @@ class TripDay(TripDayBase, table=True):
     bookings: list["TripBooking"] = Relationship(back_populates="day", cascade_delete=True)
 
 
+class TripBookingAttachmentLink(SQLModel, table=True):
+    booking_id: int = Field(foreign_key="tripbooking.id", ondelete="CASCADE", primary_key=True, index=True)
+    attachment_id: int = Field(foreign_key="tripattachment.id", ondelete="CASCADE", primary_key=True)
+
+
 class TripBookingBase(SQLModel):
     type: BookingTypeEnum = BookingTypeEnum.generic
     label: str
@@ -716,16 +738,36 @@ class TripBooking(TripBookingBase, table=True):
     trip_id: int = Field(foreign_key="trip.id", ondelete="CASCADE", index=True)
     day: TripDay | None = Relationship(back_populates="bookings")
 
+    attachments: list["TripAttachment"] = Relationship(
+        back_populates="bookings", link_model=TripBookingAttachmentLink
+    )
+
 
 class TripBookingCreate(TripBookingBase):
-    pass
+    attachment_ids: list[int] = []
 
 
 class TripBookingUpdate(TripBookingBase):
-    pass
+    attachment_ids: list[int] = []
 
 
 class TripBookingRead(TripBookingBase):
+    id: int
+    attachments: list["TripAttachmentRead"]
+
+    @classmethod
+    def serialize(cls, obj: TripBooking) -> "TripBookingRead":
+        return cls(
+            id=obj.id,
+            type=obj.type,
+            label=obj.label,
+            reference=obj.reference,
+            notes=obj.notes,
+            attachments=[TripAttachmentRead.serialize(att) for att in obj.attachments],
+        )
+
+
+class TripShareBookingRead(TripBookingBase):
     id: int
 
 
@@ -741,7 +783,7 @@ class TripDayRead(TripDayBase):
             dt=obj.dt,
             label=obj.label,
             items=[TripItemRead.serialize(item) for item in obj.items],
-            bookings=[TripBookingRead.model_validate(b) for b in obj.bookings],
+            bookings=[TripBookingRead.serialize(b) for b in obj.bookings],
             notes=obj.notes,
         )
 
@@ -751,11 +793,19 @@ class TripItemAttachmentLink(SQLModel, table=True):
     attachment_id: int = Field(foreign_key="tripattachment.id", ondelete="CASCADE", primary_key=True)
 
 
+class TripItemImageLink(SQLModel, table=True):
+    item_id: int = Field(foreign_key="tripitem.id", ondelete="CASCADE", primary_key=True, index=True)
+    image_id: int = Field(foreign_key="image.id", ondelete="CASCADE", primary_key=True)
+
+
 class TripItemBase(SQLModel):
-    time: Annotated[
-        str,
-        StringConstraints(min_length=2, max_length=5, pattern=r"^([01]\d|2[0-3])(:[0-5]\d)?$"),
-    ] | None = None
+    time: (
+        Annotated[
+            str,
+            StringConstraints(min_length=2, max_length=5, pattern=r"^([01]\d|2[0-3])(:[0-5]\d)?$"),
+        ]
+        | None
+    ) = None
     text: str
     comment: str | None = None
     lat: float | None = None
@@ -793,11 +843,19 @@ class TripItem(TripItemBase, table=True):
         back_populates="items", link_model=TripItemAttachmentLink
     )
 
+    images: list["Image"] = Relationship(link_model=TripItemImageLink)
+
+
+class ItemImageInput(BaseModel):
+    id: int | None = None
+    data: str | None = None
+
 
 class TripItemCreate(TripItemBase):
     place: int | None = None
     status: TripItemStatusEnum | None = None
-    image: str | None = None
+    images: list[ItemImageInput] = []
+    cover_index: int | None = None
     paid_by: str | None = None
     attachment_ids: list[int] = []
 
@@ -808,7 +866,8 @@ class TripItemUpdate(TripItemBase):
     place: int | None = None
     day_id: int | None = None
     status: TripItemStatusEnum | None = None
-    image: str | None = None
+    images: list[ItemImageInput] | None = None
+    cover_index: int | None = None
     paid_by: str | None = None
     attachment_ids: list[int] = []
 
@@ -820,6 +879,7 @@ class TripItemRead(TripItemBase):
     status: TripItemStatusEnum | None
     image: str | None
     image_id: int | None
+    images: list[ImageRead]
     paid_by: str | None
     attachments: list["TripAttachmentRead"]
 
@@ -838,11 +898,17 @@ class TripItemRead(TripItemBase):
             place=PlaceRead.serialize(obj.place) if obj.place else None,
             image=_prefix_assets_url(obj.image.filename) if obj.image else None,
             image_id=obj.image_id,
+            images=[ImageRead.serialize(img) for img in obj.images],
             gpx=obj.gpx,
             paid_by=obj.paid_by,
             links=obj.links,
             attachments=[TripAttachmentRead.serialize(att) for att in obj.attachments],
         )
+
+
+class TripBalanceEntry(BaseModel):
+    balance: float
+    paid: float
 
 
 class TripShareDetails(BaseModel):
@@ -896,7 +962,7 @@ class TripShareItemRead(TripItemBase):
 class TripShareDayRead(TripDayBase):
     id: int
     items: list["TripShareItemRead"]
-    bookings: list[TripBookingRead]
+    bookings: list[TripShareBookingRead]
 
     @classmethod
     def serialize(cls, obj: TripDay) -> "TripShareDayRead":
@@ -905,7 +971,7 @@ class TripShareDayRead(TripDayBase):
             dt=obj.dt,
             label=obj.label,
             items=[TripShareItemRead.serialize(item) for item in obj.items],
-            bookings=[TripBookingRead.model_validate(b) for b in obj.bookings],
+            bookings=[TripShareBookingRead.model_validate(b) for b in obj.bookings],
             notes=obj.notes,
         )
 
@@ -1012,6 +1078,9 @@ class TripAttachment(TripAttachmentBase, table=True):
     trip: Trip | None = Relationship(back_populates="attachments")
 
     items: list["TripItem"] = Relationship(back_populates="attachments", link_model=TripItemAttachmentLink)
+    bookings: list["TripBooking"] = Relationship(
+        back_populates="attachments", link_model=TripBookingAttachmentLink
+    )
 
 
 @event.listens_for(TripAttachment, "after_delete")

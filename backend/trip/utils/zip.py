@@ -2,6 +2,7 @@ import json
 import logging
 import sqlite3
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from typing import Annotated
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -16,14 +17,15 @@ from ..db.core import get_engine
 from ..deps import SessionDep, get_current_username
 from ..models.models import (Backup, BackupStatus, Category, CategoryRead,
                              Image, Place, PlaceRead, Trip, TripAttachment,
-                             TripBooking, TripChecklistItem,
-                             TripChecklistItemRead, TripDay, TripItem,
-                             TripItemAttachmentLink, TripPackingListItem,
+                             TripBooking, TripBookingAttachmentLink,
+                             TripChecklistItem, TripChecklistItemRead, TripDay,
+                             TripItem, TripItemAttachmentLink,
+                             TripItemImageLink, TripPackingListItem,
                              TripPackingListItemRead, TripRead, User, UserRead)
 from .date import dt_utc, iso_to_dt
 from .utils import (assets_folder_path, attachments_folder_path,
-                    attachments_trip_folder_path, b64img_decode, remove_image,
-                    save_image_to_file)
+                    attachments_trip_folder_path, b64img_decode,
+                    generate_urlsafe, remove_image, save_image_to_file)
 from .xml import parse_mymaps_kml
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,35 @@ def _stream_path_to_zip(zipf: ZipFile, path: Path, zip_dir: str):
             continue
         rel_path = fp.relative_to(path)
         zipf.write(fp, f"{zip_dir}/{rel_path}")
+
+
+def _dedupe_zip_filename(filename: str, used_names: set[str]) -> str:
+    if filename not in used_names:
+        used_names.add(filename)
+        return filename
+
+    stem, dot, ext = filename.rpartition(".")
+    suffix = f".{ext}" if dot else ""
+    base = stem if dot else filename
+
+    counter = 1
+    candidate = f"{base} ({counter}){suffix}"
+    while candidate in used_names:
+        counter += 1
+        candidate = f"{base} ({counter}){suffix}"
+
+    used_names.add(candidate)
+    return candidate
+
+
+def zip_trip_attachments(trip_id: int, attachments: list[TripAttachment], zip_fp: Path | BytesIO):
+    used_names: set[str] = set()
+    with ZipFile(zip_fp, "w", ZIP_DEFLATED, compresslevel=9) as zipf:
+        for attachment in attachments:
+            att_path = attachments_trip_folder_path(trip_id) / attachment.stored_filename
+            if not att_path.is_file():
+                continue
+            zipf.write(att_path, _dedupe_zip_filename(attachment.filename, used_names))
 
 
 def _admin_backup_export(zip_fp: Path):
@@ -79,6 +110,7 @@ def _user_backup_export(user: str, backup_dt, zip_fp: Path, session: Session):
                     selectinload(TripItem.place).selectinload(Place.category).selectinload(Category.image),
                     selectinload(TripItem.place).selectinload(Place.image),
                     selectinload(TripItem.image),
+                    selectinload(TripItem.images),
                 ),
                 selectinload(Trip.places).options(
                     selectinload(Place.category).selectinload(Category.image),
@@ -132,10 +164,15 @@ def process_backup_export(backup_id: int, full: bool = False):
 
         backup_dt = dt_utc()
         iso_date = backup_dt.strftime("%Y-%m-%dT%H-%M-%S")
+        # A short random token is appended so concurrent exports (e.g. two admin full
+        # backups started close together) can never collide on the same filename/path.
+        # This token is internal only: download endpoints rebuild a user-facing
+        # filename from created_at/user at download time, so it never leaks out.
+        unique_token = generate_urlsafe()[:8]
         if full:
-            filename = f"TRIP_{iso_date}_full_backup.zip"
+            filename = f"TRIP_{iso_date}_full_backup_{unique_token}.zip"
         else:
-            filename = f"TRIP_{db_backup.user}_{iso_date}_backup.zip"
+            filename = f"TRIP_{db_backup.user}_{iso_date}_backup_{unique_token}.zip"
         backups_dir = Path(get_settings().BACKUPS_FOLDER)
         backups_dir.mkdir(parents=True, exist_ok=True)
         zip_fp = backups_dir / filename
@@ -166,6 +203,14 @@ def process_backup_export(backup_id: int, full: bool = False):
                 logger.error(f"[BACKUP EXPORT]: Failed to clean ({zip_fp}): {exc}")
 
 
+def _read_bounded(zipf: ZipFile, name: str, max_size: int) -> bytes:
+    with zipf.open(name, "r") as entry:
+        data = entry.read(max_size + 1)
+    if len(data) > max_size:
+        raise ValueError(f"Zip entry {name!r} exceeds max allowed decompressed size ({max_size})")
+    return data
+
+
 # use def instead of async def https://fastapi.tiangolo.com/async/#path-operation-functions
 def process_backup_import(
     session: SessionDep, current_user: Annotated[str, Depends(get_current_username)], file: UploadFile
@@ -177,6 +222,13 @@ def process_backup_import(
 
     file.file.seek(0)
     with ZipFile(file.file, "r") as zipf:
+        # Cheap upfront zip-bomb guard: ZipInfo.file_size is metadata read from the
+        # central directory, no decompression needed. Reject grossly oversized
+        # archives before doing any real work.
+        total_declared_size = sum(info.file_size for info in zipf.infolist())
+        if total_declared_size > get_settings().BACKUP_IMPORT_MAX_TOTAL_SIZE:
+            raise HTTPException(status_code=400, detail="Backup archive is too large")
+
         zip_filenames = []
         for name in zipf.namelist():
             if ".." in name or name.startswith("/"):
@@ -187,7 +239,7 @@ def process_backup_import(
             raise HTTPException(status_code=400, detail="Invalid file")
 
         try:
-            data = json.loads(zipf.read("data.json"))
+            data = json.loads(_read_bounded(zipf, "data.json", get_settings().BACKUP_IMPORT_MAX_ENTRY_SIZE))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid file")
 
@@ -225,7 +277,11 @@ def process_backup_import(
                         category_filename = category.get("image").split("/")[-1]
                         if category_filename and category_filename in image_files:
                             try:
-                                image_bytes = zipf.read(image_files[category_filename])
+                                image_bytes = _read_bounded(
+                                    zipf,
+                                    image_files[category_filename],
+                                    get_settings().BACKUP_IMPORT_MAX_ENTRY_SIZE,
+                                )
                                 filename, file_size = save_image_to_file(
                                     image_bytes, get_settings().PLACE_IMAGE_SIZE
                                 )
@@ -260,7 +316,11 @@ def process_backup_import(
                     category_filename = category.get("image").split("/")[-1]
                     if category_filename and category_filename in image_files:
                         try:
-                            image_bytes = zipf.read(image_files[category_filename])
+                            image_bytes = _read_bounded(
+                                zipf,
+                                image_files[category_filename],
+                                get_settings().BACKUP_IMPORT_MAX_ENTRY_SIZE,
+                            )
                             filename, file_size = save_image_to_file(
                                 image_bytes, get_settings().PLACE_IMAGE_SIZE
                             )
@@ -304,7 +364,11 @@ def process_backup_import(
                     place_filename = place.get("image").split("/")[-1]
                     if place_filename and place_filename in image_files:
                         try:
-                            image_bytes = zipf.read(image_files[place_filename])
+                            image_bytes = _read_bounded(
+                                zipf,
+                                image_files[place_filename],
+                                get_settings().BACKUP_IMPORT_MAX_ENTRY_SIZE,
+                            )
                             filename, file_size = save_image_to_file(
                                 image_bytes, get_settings().PLACE_IMAGE_SIZE
                             )
@@ -378,7 +442,9 @@ def process_backup_import(
                     trip_filename = trip.get("image").split("/")[-1]
                     if trip_filename and trip_filename in image_files:
                         try:
-                            image_bytes = zipf.read(image_files[trip_filename])
+                            image_bytes = _read_bounded(
+                                zipf, image_files[trip_filename], get_settings().BACKUP_IMPORT_MAX_ENTRY_SIZE
+                            )
                             filename, file_size = save_image_to_file(
                                 image_bytes, get_settings().TRIP_IMAGE_SIZE
                             )
@@ -415,7 +481,9 @@ def process_backup_import(
 
                     if stored_filename in attachment_files:
                         try:
-                            attachment_bytes = zipf.read(attachment_files[stored_filename])
+                            attachment_bytes = _read_bounded(
+                                zipf, attachment_files[stored_filename], get_settings().ATTACHMENT_MAX_SIZE
+                            )
                             new_attachment = {
                                 key: attachment[key]
                                 for key in attachment
@@ -446,8 +514,21 @@ def process_backup_import(
                     session.flush()
 
                     for booking in day.get("bookings", []):
-                        booking_data = {key: booking[key] for key in booking if key != "id"}
-                        session.add(TripBooking(**booking_data, day_id=new_day.id, trip_id=new_trip.id))
+                        booking_data = {
+                            key: booking[key] for key in booking if key not in {"id", "attachments"}
+                        }
+                        new_booking = TripBooking(**booking_data, day_id=new_day.id, trip_id=new_trip.id)
+                        session.add(new_booking)
+                        session.flush()
+                        session.refresh(new_booking)
+                        for attachment in booking.get("attachments", []):
+                            attachment_id = attachment.get("id")
+                            if attachment_id and attachment_id in trip_attachment_mapping:
+                                new_attachment_id = trip_attachment_mapping[attachment_id]
+                                link = TripBookingAttachmentLink(
+                                    booking_id=new_booking.id, attachment_id=new_attachment_id
+                                )
+                                attachment_links_to_add.append(link)
 
                     for item in day.get("items", []):
                         if item.get("paid_by"):
@@ -460,7 +541,8 @@ def process_backup_import(
                         item_data = {
                             key: item[key]
                             for key in item
-                            if key not in {"id", "place", "place_id", "image", "image_id", "attachments"}
+                            if key
+                            not in {"id", "place", "place_id", "image", "image_id", "images", "attachments"}
                         }
                         item_data["day_id"] = new_day.id
 
@@ -469,30 +551,52 @@ def process_backup_import(
                             new_place_id = trip_place_id_map.get(place_id)
                             item_data["place_id"] = new_place_id
 
-                        if item.get("image_id"):
-                            place_filename = item.get("image", "").split("/")[-1]
-                            if place_filename and place_filename in image_files:
-                                try:
-                                    image_bytes = zipf.read(image_files[place_filename])
-                                    filename, file_size = save_image_to_file(
-                                        image_bytes, get_settings().PLACE_IMAGE_SIZE
-                                    )
-                                    if filename:
-                                        image = Image(
-                                            filename=filename, file_size=file_size, user=current_user
-                                        )
-                                        session.add(image)
-                                        session.flush()
-                                        session.refresh(image)
-                                        created_image_filenames.append(filename)
-                                        item_data["image_id"] = image.id
-                                except Exception as exc:
-                                    logger.warning(f"[BACKUP IMPORT]: Failed to restore item image: {exc}")
+                        # Restore the image gallery. Newer backups carry an "images" list;
+                        # older ones only have the single cover image/image_id, which we
+                        # normalize into the same one-entry shape.
+                        old_cover_id = item.get("image_id")
+                        image_entries = item.get("images")
+                        if not image_entries and old_cover_id:
+                            image_entries = [{"id": old_cover_id, "url": item.get("image", "")}]
+
+                        restored_images: list[Image] = []
+                        cover_image: Image | None = None
+                        for img_entry in image_entries or []:
+                            img_filename = img_entry.get("url", "").split("/")[-1]
+                            if not img_filename or img_filename not in image_files:
+                                continue
+                            try:
+                                image_bytes = _read_bounded(
+                                    zipf,
+                                    image_files[img_filename],
+                                    get_settings().BACKUP_IMPORT_MAX_ENTRY_SIZE,
+                                )
+                                filename, file_size = save_image_to_file(
+                                    image_bytes, get_settings().PLACE_IMAGE_SIZE
+                                )
+                                if filename:
+                                    image = Image(filename=filename, file_size=file_size, user=current_user)
+                                    session.add(image)
+                                    session.flush()
+                                    session.refresh(image)
+                                    created_image_filenames.append(filename)
+                                    restored_images.append(image)
+                                    if img_entry.get("id") == old_cover_id:
+                                        cover_image = image
+                            except Exception as exc:
+                                logger.warning(f"[BACKUP IMPORT]: Failed to restore item image: {exc}")
+
+                        if restored_images:
+                            item_data["image_id"] = (cover_image or restored_images[0]).id
 
                         trip_item = TripItem(**item_data)
                         session.add(trip_item)
                         session.flush()
                         session.refresh(trip_item)
+
+                        for image in restored_images:
+                            session.add(TripItemImageLink(item_id=trip_item.id, image_id=image.id))
+
                         for attachment in item.get("attachments", []):
                             attachment_id = attachment.get("id")
                             if attachment_id and attachment_id in trip_attachment_mapping:
@@ -563,6 +667,9 @@ def process_legacy_import(
     session: SessionDep, current_user: Annotated[str, Depends(get_current_username)], file: UploadFile
 ):
     # supports previous import format (JSON file) — no packing list, no checklist, no attachments
+    if file.size is not None and file.size > get_settings().BACKUP_IMPORT_MAX_TOTAL_SIZE:
+        raise HTTPException(status_code=400, detail="File is too large")
+
     try:
         content = file.file.read()
         data = json.loads(content)
@@ -589,7 +696,9 @@ def process_legacy_import(
                     b64_image = data.get("images", {}).get(str(category.get("image_id")))
                     if b64_image:
                         image_bytes = b64img_decode(b64_image)
-                        filename, file_size = save_image_to_file(image_bytes, get_settings().PLACE_IMAGE_SIZE)
+                        filename, file_size = save_image_to_file(
+                            image_bytes, get_settings().PLACE_IMAGE_SIZE
+                        )
                         if not filename:
                             raise HTTPException(status_code=500, detail="Error saving image")
 
@@ -708,7 +817,6 @@ def process_legacy_import(
             session.flush()
 
         trip_place_id_map = {old_id: new_p.id for old_id, new_p in zip(place_old_ids, places)}
-        items_to_add = []
         for trip in data.get("trips", []):
             trip_data = {
                 key: trip[key]
@@ -764,6 +872,7 @@ def process_legacy_import(
                     ):
                         item_data["place_id"] = new_place_id
 
+                    cover_image: Image | None = None
                     if item.get("image_id"):
                         b64_image = data.get("images", {}).get(str(item.get("image_id")))
                         if b64_image:
@@ -778,12 +887,15 @@ def process_legacy_import(
                                 session.refresh(image)
                                 created_image_filenames.append(filename)
                                 item_data["image_id"] = image.id
+                                cover_image = image
 
                     trip_item = TripItem(**item_data)
-                    items_to_add.append(trip_item)
+                    session.add(trip_item)
+                    session.flush()
 
-        if items_to_add:
-            session.add_all(items_to_add)
+                    # Link the cover into the gallery so it shows in the multi-image view.
+                    if cover_image:
+                        session.add(TripItemImageLink(item_id=trip_item.id, image_id=cover_image.id))
 
         session.commit()
         return {
@@ -791,7 +903,9 @@ def process_legacy_import(
             "categories": [
                 CategoryRead.serialize(c)
                 for c in session.exec(
-                    select(Category).options(selectinload(Category.image)).where(Category.user == current_user)
+                    select(Category)
+                    .options(selectinload(Category.image))
+                    .where(Category.user == current_user)
                 ).all()
             ],
             "settings": UserRead.serialize(session.get(User, current_user)),
@@ -822,10 +936,20 @@ def parse_mymaps_kmz(file: UploadFile) -> list[dict]:
             kml_files = [name for name in kmz.namelist() if name.endswith(".kml")]
             if not kml_files:
                 raise ValueError("Invalid KMZ file: missing KML file")
+
             for kml_filename in kml_files:
-                with kmz.open(kml_filename, "r") as kml_file:
-                    kml_content = kml_file.read().decode("utf-8")
+                # Per-entry isolation: one malformed/oversized KML file must not
+                # discard places already parsed from other files in the same
+                # archive.
+                try:
+                    kml_bytes = _read_bounded(kmz, kml_filename, get_settings().KML_MAX_ENTRY_SIZE)
+                    kml_content = kml_bytes.decode("utf-8")
                     places.extend(parse_mymaps_kml(kml_content))
+                except Exception as exc:
+                    logger.warning(f"[KMZ IMPORT]: Skipping KML entry {kml_filename!r}: {exc}")
+                    continue
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"[KMZ IMPORT]: {exc}")
         raise HTTPException(status_code=400, detail="Failed to parse KMZ file")

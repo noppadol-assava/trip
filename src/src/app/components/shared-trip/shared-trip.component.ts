@@ -52,7 +52,7 @@ import { UtilsService } from '../../services/utils.service';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
-import { LinkifyPipe } from '../../shared/pipes/linkify.pipe';
+import { MarkdownPipe } from '../../shared/pipes/markdown.pipe';
 import { DialogModule } from 'primeng/dialog';
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { TooltipModule } from 'primeng/tooltip';
@@ -62,13 +62,20 @@ import { generateTripICSFile } from '../../shared/trip-base/ics';
 import { generateTripCSVFile } from '../../shared/trip-base/csv';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FileSizePipe } from '../../shared/pipes/filesize.pipe';
-import { computeDistLatLng } from '../../shared/utils';
+import {
+  bookingTypeClass as sharedBookingTypeClass,
+  bookingTypeIcon as sharedBookingTypeIcon,
+  computeDistLatLng,
+  sortBookings as sharedSortBookings,
+} from '../../shared/utils';
 import { TabList, TabsModule } from 'primeng/tabs';
 import { PlaceBoxContentComponent } from '../../shared/place-box-content/place-box-content.component';
 import { PlaceListItemComponent } from '../../shared/place-list-item/place-list-item.component';
 import { TripPrettyPrintModalComponent } from '../../modals/trip-pretty-print-modal/trip-pretty-print-modal.component';
 import { ToggleButtonModule } from 'primeng/togglebutton';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
+import { LinkChipComponent } from '../../shared/link-chip/link-chip.component';
+import { ItemGalleryComponent } from '../../shared/item-gallery/item-gallery.component';
 
 const HIGHLIGHT_COLORS = [
   '#e6194b',
@@ -98,7 +105,7 @@ const MAX_MAP_INIT_RETRIES = 5;
     SkeletonModule,
     MenuModule,
     InputTextModule,
-    LinkifyPipe,
+    MarkdownPipe,
     FloatLabelModule,
     TableModule,
     ButtonModule,
@@ -114,6 +121,8 @@ const MAX_MAP_INIT_RETRIES = 5;
     PlaceListItemComponent,
     ToggleButtonModule,
     TranslocoDirective,
+    LinkChipComponent,
+    ItemGalleryComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './shared-trip.component.html',
@@ -416,6 +425,8 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   markers = new Map<number, L.Marker>();
   selectedItemMarker?: L.Marker;
   highlightedMarkerElement?: HTMLElement;
+  gpxLayerGroup?: L.LayerGroup;
+  displayedItemGpxId = signal<number | null>(null);
 
   constructor() {
     this.apiService = inject(ApiService);
@@ -560,6 +571,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
 
       untracked(() => {
         this.clearSelectedItemHighlight();
+        this.clearItemGPX();
         if (!this.map) return;
         if (place) {
           const existingMarker = this.markers.get(place.id);
@@ -576,11 +588,16 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       });
     });
 
-    const plansPanelWidth = localStorage.getItem('plansPanelWidth');
-    if (plansPanelWidth) {
-      const width = parseInt(plansPanelWidth, 10);
-      if (!isNaN(width)) this.panelWidth.set(width);
-    }
+    const viewPrefs = this.utilsService.getTripViewPrefs();
+    if (viewPrefs.panelWidth != null) this.panelWidth.set(viewPrefs.panelWidth);
+    if (viewPrefs.selectedItemProps) this.selectedItemProps.set(viewPrefs.selectedItemProps);
+    if (viewPrefs.isTextAndPlaceToggled != null) this.isTextAndPlaceToggled.set(viewPrefs.isTextAndPlaceToggled);
+
+    effect(() => {
+      const selectedItemProps = this.selectedItemProps();
+      const isTextAndPlaceToggled = this.isTextAndPlaceToggled();
+      untracked(() => this.utilsService.saveTripViewPrefs({ selectedItemProps, isTextAndPlaceToggled }));
+    });
 
     effect(() => {
       const currentTrip = this.trip();
@@ -610,6 +627,11 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       this.map?.removeLayer(this.tripMapAntLayer);
       this.tripMapAntLayer = undefined;
     }
+    if (this.gpxLayerGroup) {
+      this.map?.removeLayer(this.gpxLayerGroup);
+      this.gpxLayerGroup = undefined;
+    }
+    this.displayedItemGpxId.set(null);
     this.markers.forEach((marker) => marker.remove());
     this.markers.clear();
     if (this.markerClusterGroup) {
@@ -912,6 +934,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
         props: this.availableItemProps,
         selectedProps: this.selectedItemProps(),
         days: trip.days,
+        isFullAccess: this.isFullAccess(),
       },
     })!;
 
@@ -977,7 +1000,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
 
   resetPlansWidth() {
     this.panelWidth.set(null);
-    localStorage.removeItem('plansPanelWidth');
+    this.utilsService.saveTripViewPrefs({ panelWidth: null });
   }
 
   onPlansResizeStart(event: PointerEvent): void {
@@ -997,7 +1020,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
 
     const onUp = (e: PointerEvent) => {
       handle.releasePointerCapture(e.pointerId);
-      localStorage.setItem('plansPanelWidth', this.panelWidth()!.toString());
+      this.utilsService.saveTripViewPrefs({ panelWidth: this.panelWidth() });
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
@@ -1012,7 +1035,6 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   }
 
   onDayClick(day: TripDay) {
-    this.toggleTripDayHighlight(null);
     if (this.selectedDay()?.id === day.id) {
       this.selectedPlace.set(null);
       this.selectedItem.set(null);
@@ -1023,7 +1045,6 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     this.selectedDay.set(day);
     this.selectedPlace.set(null);
     this.selectedItem.set(null);
-    this.toggleTripDayHighlight(day.id);
   }
 
   onPlaceClick(place: Place) {
@@ -1148,6 +1169,36 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  toggleItemGPX(item: ViewTripItem) {
+    if (!this.map || !item.gpx) return;
+
+    if (this.displayedItemGpxId() === item.id) {
+      this.clearItemGPX();
+      return;
+    }
+
+    if (!this.gpxLayerGroup) this.gpxLayerGroup = L.layerGroup().addTo(this.map);
+    this.gpxLayerGroup.clearLayers();
+
+    try {
+      const polyline = gpxToPolyline(item.gpx);
+      this.gpxLayerGroup.addLayer(polyline);
+      this.map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
+      this.displayedItemGpxId.set(item.id);
+    } catch {
+      this.utilsService.toast(
+        'error',
+        this.translocoService.translate('common.status.error'),
+        this.translocoService.translate('messages.could_not_parse_gpx'),
+      );
+    }
+  }
+
+  clearItemGPX() {
+    this.gpxLayerGroup?.clearLayers();
+    this.displayedItemGpxId.set(null);
+  }
+
   openPackingList() {
     if (!this.token) return;
     this.apiService.getSharedTripPackingList(this.token).subscribe((items) => {
@@ -1229,14 +1280,6 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     URL.revokeObjectURL(downloadURL);
   }
 
-  getDomain(url: string): string {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return url;
-    }
-  }
-
   itemToNavigation() {
     const item = this.selectedItem();
     const placeItems = this.selectedPlaceItems();
@@ -1285,6 +1328,28 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       });
   }
 
+  downloadAllAttachments() {
+    if (!this.token) return;
+    this.apiService
+      .downloadAllSharedTripAttachments(this.token)
+      .pipe(take(1))
+      .subscribe({
+        next: (data) => {
+          const blob = new Blob([data], { type: 'application/zip' });
+          const url = window.URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.download = `TRIP_${this.trip()!.name}_attachments.zip`;
+          anchor.href = url;
+
+          document.body.appendChild(anchor);
+          anchor.click();
+
+          document.body.removeChild(anchor);
+          window.URL.revokeObjectURL(url);
+        },
+      });
+  }
+
   flyTo(latlng?: [number, number]) {
     const selected = this.selectedItem() || this.selectedPlace();
     if (!this.map || (!latlng && (!selected || !selected.lat || !selected.lng))) return;
@@ -1295,24 +1360,14 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   }
 
   bookingTypeIcon(type: string): string {
-    const icons: Record<string, string> = {
-      flight: '✈️',
-      car: '🚗',
-      hotel: '🏨',
-      activity: '🎪',
-      generic: '📋',
-    };
-    return icons[type] ?? '📋';
+    return sharedBookingTypeIcon(type);
   }
 
   bookingTypeClass(type: string): string {
-    const classes: Record<string, string> = {
-      flight: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
-      car: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-      hotel: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
-      activity: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
-      generic: 'bg-primary-100 text-primary-600 dark:bg-primary-800 dark:text-primary-300',
-    };
-    return classes[type] ?? classes['generic'];
+    return sharedBookingTypeClass(type);
+  }
+
+  sortBookings(bookings: TripBooking[]): TripBooking[] {
+    return sharedSortBookings(bookings);
   }
 }

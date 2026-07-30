@@ -12,7 +12,11 @@
         </p-inputgroup-addon>
         <p-floatlabel variant="in">
           <p-select [options]="trip?.days" optionLabel="label" optionValue="id" formControlName="day_id" inputId="day"
-            [showClear]="true" appendTo="body" fluid class="capitalize" />
+            [showClear]="true" appendTo="body" fluid class="capitalize">
+            <ng-template let-day #item>
+              <div>{{ day.label }} @if (day.dt) {<span class="text-xs text-gray-400 dark:text-gray-500">{{ day.dt }}</span>}</div>
+            </ng-template>
+          </p-select>
           <label for="day">{{ t('common.fields.day') }}</label>
         </p-floatlabel>
       </p-inputgroup>
@@ -128,17 +132,35 @@
           autoResize fluid></textarea>
       </p-inputgroup>
 
+      <div>
+        <p-inputgroup>
+          <p-inputgroup-addon>
+            <p-checkbox [binary]="true" formControlName="enable_attachment_ids" />
+          </p-inputgroup-addon>
+          <p-floatlabel variant="in">
+            <p-multiselect [options]="trip?.attachments ?? []" optionValue="id" optionLabel="filename" id="attachment_ids"
+              formControlName="attachment_ids" [showToggleAll]="false" display="chip" scrollHeight="320px" appendTo="body"
+              fluid />
+            <label for="attachment_ids">{{ t('common.fields.attachments') }}</label>
+          </p-floatlabel>
+        </p-inputgroup>
+        @if (editForm.get('enable_attachment_ids')?.value) {
+        <p class="text-xs text-primary-500 mt-1 ml-10">{{ t('modals.bulk.attachments_replace_hint') }}</p>
+        }
+      </div>
+
+      @if (hasMultipleMembers) {
       <p-inputgroup>
         <p-inputgroup-addon>
-          <p-checkbox [binary]="true" formControlName="enable_attachment_ids" />
+          <p-checkbox [binary]="true" formControlName="enable_paid_by" />
         </p-inputgroup-addon>
         <p-floatlabel variant="in">
-          <p-multiselect [options]="trip?.attachments ?? []" optionValue="id" optionLabel="filename" id="attachment_ids"
-            formControlName="attachment_ids" [showToggleAll]="false" display="chip" scrollHeight="320px" appendTo="body"
-            fluid />
-          <label for="attachment_ids">{{ t('common.fields.attachments') }}</label>
+          <p-select [options]="members" optionLabel="user" optionValue="user" formControlName="paid_by"
+            inputId="paid_by" [showClear]="true" appendTo="body" fluid />
+          <label for="paid_by">{{ t('modals.item.paid_by') }}</label>
         </p-floatlabel>
       </p-inputgroup>
+      }
     </div>
 
     <div class="flex justify-center pt-4 border-t border-primary-200 dark:border-primary-700">

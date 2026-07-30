@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 LEGACY_CONFIG_FILE = Path("storage/config.yml")
 CONFIG_FILE = Path("storage/config.env")
 
+# Marker returned in place of the real OIDC client secret on read, and treated
+# as "unchanged" (i.e. dropped from the update) when received on write.
+OIDC_CLIENT_SECRET_MASK = "********"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -27,6 +31,10 @@ class Settings(BaseSettings):
     ATTACHMENTS_FOLDER: str = "storage/attachments"
     ATTACHMENT_MAX_SIZE: int = 10 * 1024 * 1024  # 10MB
     BACKUPS_FOLDER: str = "storage/backups"
+    BACKUP_IMPORT_MAX_ENTRY_SIZE: int = 100 * 1024 * 1024  # 100MB
+    BACKUP_IMPORT_MAX_TOTAL_SIZE: int = 500 * 1024 * 1024  # 500MB
+    KML_MAX_ENTRY_SIZE: int = 50 * 1024 * 1024  # 50MB
+    PROVIDER_IMPORT_MAX_SIZE: int = 20 * 1024 * 1024  # 20MB
 
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
@@ -34,6 +42,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 1440
 
     REGISTER_ENABLE: bool = True
+    BOOTSTRAP_ADMIN_USERNAME: str = ""
     OIDC_DISCOVERY_URL: str = ""
     OIDC_CLIENT_ID: str = ""
     OIDC_CLIENT_SECRET: str = ""
@@ -102,6 +111,14 @@ def update_config(updates: dict) -> Settings:
 
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text("\n".join(lines) + "\n")
+
+    oidc_keys = {"OIDC_DISCOVERY_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI"}
+    if oidc_keys & updates.keys():
+        # deferred import: security.py imports get_settings from this module,
+        # so a top-level import here would create a circular import
+        from .security import invalidate_oidc_cache
+
+        invalidate_oidc_cache()
 
     return reload_settings()
 
