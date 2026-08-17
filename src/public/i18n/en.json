@@ -20,6 +20,7 @@
     "add_booking": "booking",
     "attachments": "Attachments",
     "cancel": "Cancel",
+    "day": "Day",
     "days": "Days",
     "days_selected": "{0} days selected",
     "delete": "Delete",
@@ -41,6 +42,16 @@
     },
     "upload_new": "Upload New",
     "view_booking": "View booking"
+  },
+  "calendar": {
+    "disable": "Disable calendar sync",
+    "enable": "Enable",
+    "enable_desc": "Create a private link your calendar app can subscribe to and keep in sync.",
+    "not_enabled": "Calendar sync is not enabled for this trip.",
+    "refresh_notice": "Your calendar app decides how often it refreshes. Google Calendar may take up to a day.",
+    "stop_syncing": "Stop calendar sync for {{name}}? Existing subscriptions will stop updating.",
+    "subscribe_on_link": "Subscribe to this trip in your calendar app with this link:",
+    "title": "Calendar sync"
   },
   "clipboard": {
     "confirm_paste": "Confirm Paste",
@@ -94,27 +105,33 @@
       "update": "Update"
     },
     "fields": {
+      "actions": "Actions",
       "attachments": "Attachments",
       "categories": "Categories",
       "category": "Category",
       "checklist": "Checklist",
+      "collaboration": "Collaboration",
       "color": "Color",
       "cols": "Cols",
       "comment": "Comment",
       "coordinates": "Coordinates",
+      "csv": "CSV",
       "currency": "Currency",
       "date": "Date",
       "date_range": "Date Range",
       "day": "Day",
       "days": "Days",
+      "default": "Default",
       "description": "Description",
       "distance": "Distance",
       "gpx": "GPX",
+      "ics": "Calendar (.ics)",
       "image": "Image",
       "itinerary": "Itinerary",
       "label": "Label",
       "latitude": "Latitude",
       "links": "Links",
+      "lists": "Lists",
       "longitude": "Longitude",
       "map": "Map",
       "markdown_hint": "Markdown supported",
@@ -124,6 +141,7 @@
       "notes": "Notes",
       "packing_list": "Packing List",
       "password": "Password",
+      "pdf": "PDF",
       "place": "Place",
       "places": "Places",
       "plan": "Plan",
@@ -148,7 +166,6 @@
       "success": "Success",
       "unplanned": "Unplanned",
       "wait": "This may take a moment. Please wait.",
-      "wip": "WIP - Coming soon!",
       "with_status": "With status"
     }
   },
@@ -179,6 +196,7 @@
     "mins": "{{count}} mins"
   },
   "empty_states": {
+    "checklist_empty": "Your checklist is empty",
     "every_place_used": "Every place is used",
     "no_attachments": "No attachments",
     "no_days": "No days",
@@ -199,6 +217,11 @@
       "delete_desc": "Delete attachment? This cannot be undone.",
       "download_all": "Download all"
     },
+    "checklist": {
+      "add": "New Checklist",
+      "delete": "Delete Checklist",
+      "rename": "Rename Checklist"
+    },
     "day": {
       "add": "Add Day(s)",
       "delete": "Delete Day",
@@ -211,12 +234,23 @@
       "add_packing": "Add Packing",
       "add_poi": "Add Point of Interest",
       "delete": "Delete Item",
-      "edit": "Edit Item"
+      "edit": "Edit Item",
+      "notify_dt": "Notify at"
+    },
+    "link": {
+      "delete": "Delete Link",
+      "delete_desc": "Delete this link?",
+      "edit": "Edit Link"
     },
     "member": {
       "delete_desc": "Delete {{name}} from Trip ?",
       "invite": "Invite Member",
       "remove": "Remove Member"
+    },
+    "packing_list": {
+      "add": "New Packing List",
+      "delete": "Delete Packing List",
+      "rename": "Rename Packing List"
     },
     "place": {
       "attached": "Attached Places",
@@ -280,6 +314,7 @@
     "delete_plans_count": "Delete {{count}} plan(s)? This cannot be undone.",
     "delete_user_failed": "Failed to delete user",
     "duplicate_count": "Duplicate {{count}} plan(s)?",
+    "error_deleting_apprise_webhook": "Error deleting Apprise webhook",
     "error_deleting_gapi": "Error deleting GMaps API key",
     "error_disabling": "Error disabling TOTP",
     "error_totp": "Error enabling TOTP",
@@ -447,6 +482,11 @@
         "description": "Include day bookings",
         "title": "Bookings"
       },
+      "days": {
+        "description": "Select which days to include",
+        "selected": "{0} days selected",
+        "title": "Days"
+      },
       "images": {
         "description": "Include item images"
       },
@@ -460,6 +500,11 @@
       "places": {
         "description": "Include places recap",
         "title": "Places recap"
+      },
+      "places_detailed": {
+        "description": "Show full place details (address, coordinates, price, description, links...). May significantly increase the number of printed pages.",
+        "gpx_attached": "GPX track attached",
+        "title": "Detailed places recap"
       },
       "properties": {
         "description": "Fields to include",
@@ -520,10 +565,15 @@
     "allow_registration": "Allow users to self-register",
     "always_display_visited": "Show Visited Places",
     "always_display_visited_desc": "Always display visited places as small dots",
-    "api_key": "API Key",
+    "api_key": "TRIP API Key",
     "api_key_desc": "Use it to authenticate in scripts",
+    "apprise_webhook": "Apprise Webhook",
+    "apprise_webhook_desc": "Get notified on scheduled checklist items via an Apprise URL",
     "attachments_max_size": "Attachments max size (MB)",
     "authentication": "Authentication",
+    "backup_entry_size": "Per-file",
+    "backup_import_limits": "Backup import limits (MB)",
+    "backup_total_size": "Total",
     "backups": "Backups",
     "category_add": "Add Category",
     "category_delete": "Delete category",
@@ -542,6 +592,7 @@
     "default_lng": "Default Longitude",
     "default_map_tile": "Default map tile layer",
     "defaults": "Defaults",
+    "delete_apprise_webhook": "Are you sure you want to delete the Apprise Webhook ?",
     "delete_gapi_key": "Are you sure you want to delete GMaps API Key ?",
     "delete_user": "Delete user",
     "delete_user_message": "Permanently delete {{name}} and all their data? This cannot be undone.",
@@ -566,7 +617,9 @@
     "gpx_indicator_desc": "Show compass when GPX data available",
     "handle_with_care": "Handle with care",
     "image_sizes": "Image sizes (px)",
+    "import_limits": "Import limits (MB)",
     "integrations": "Integrations",
+    "kml_max_size": "KML",
     "language": "Change language",
     "lat": "Lat",
     "latest_version": "Latest version",
@@ -596,6 +649,7 @@
     "processing": "Processing...",
     "provider": "Map Provider",
     "provider_desc": "Select the default map provider",
+    "provider_import_size": "Provider",
     "provider_placeholder": "Provider",
     "refresh": "Refresh",
     "registration": "Registration",
@@ -638,6 +692,8 @@
     "include_everything": "Include everything (documents, descriptions, etc.)",
     "is": "is",
     "is_not_shared": "is not currently shared.",
+    "not_found": "Trip not found",
+    "not_found_desc": "The requested trip does not exist",
     "partially": "partially",
     "shared_on_link": "shared on this link:",
     "stop_sharing": "Stop sharing {{name}}?"
@@ -674,8 +730,10 @@
     "distance_km": "{{distance}} km",
     "drag_resize": "Drag to resize. Double click to reset.",
     "off_show_bookings": "Bookings Hidden",
+    "off_show_day_notes": "Day Notes Hidden",
     "off_show_text": "Show Place",
     "on_show_bookings": "Bookings Shown",
+    "on_show_day_notes": "Day Notes Shown",
     "on_show_text": "Show Text + Place",
     "open_navigation": "Open Navigation",
     "places_count": "Places ({{count}})",

@@ -55,27 +55,33 @@
       "update": "Bijwerken"
     },
     "fields": {
+      "actions": "Acties",
       "attachments": "Bijlagen",
       "categories": "Categorieën",
       "category": "Categorie",
       "checklist": "Checklist",
+      "collaboration": "Samenwerking",
       "color": "Kleur",
       "cols": "Kol.",
       "comment": "Opmerking",
       "coordinates": "Coördinaten",
+      "csv": "CSV",
       "currency": "Valuta",
       "date": "Datum",
       "date_range": "Datumbereik",
       "day": "Dag",
       "days": "Dagen",
+      "default": "Standaard",
       "description": "Beschrijving",
       "distance": "Afstand",
       "gpx": "GPX",
+      "ics": "Agenda (.ics)",
       "image": "Afbeelding",
       "itinerary": "Reisplan",
       "label": "Label",
       "latitude": "Breedtegraad",
       "links": "Links",
+      "lists": "Lijsten",
       "longitude": "Lengtegraad",
       "map": "Kaart",
       "markdown_hint": "Markdown ondersteund",
@@ -85,6 +91,7 @@
       "notes": "Notities",
       "packing_list": "Paklijst",
       "password": "Wachtwoord",
+      "pdf": "PDF",
       "place": "Locatie",
       "places": "Locaties",
       "plan": "Plan",
@@ -109,7 +116,6 @@
       "success": "Gelukt",
       "unplanned": "Niet gepland",
       "wait": "Dit kan even duren. Een ogenblik geduld.",
-      "wip": "WIP - Binnenkort beschikbaar!",
       "with_status": "Met status"
     }
   },
@@ -157,7 +163,7 @@
     "verify_totp": "TOTP verifiëren",
     "totp_message": "Voeg dit geheim toe aan je authenticator-app.\nVoer de gegenereerde code hieronder in om te verifiëren",
     "disable_totp": "Weet je zeker dat je TOTP wilt uitschakelen?",
-    "api_key": "API-sleutel",
+    "api_key": "TRIP API-sleutel",
     "api_key_desc": "Gebruik deze om te authenticeren in scripts",
     "trip_api_key": "TRIP API-sleutel",
     "remove_token": "Je API-token verwijderen?",
@@ -168,6 +174,9 @@
     "google_api_desc": "Verbind je Google API-sleutel voor uitgebreide locatieservices",
     "manage_api_keys": "API-sleutels beheren",
     "delete_gapi_key": "Weet je zeker dat je de GMaps API-sleutel wilt verwijderen?",
+    "apprise_webhook": "Apprise Webhook",
+    "apprise_webhook_desc": "Ontvang meldingen voor geplande checklist-items via een Apprise-URL",
+    "delete_apprise_webhook": "Weet je zeker dat je de Apprise webhook wilt verwijderen?",
     "map_parameters": "Kaartparameters",
     "map_parameters_desc": "Configureer standaard kaartweergave en tegellagen",
     "default_lat": "Standaard breedtegraad",
@@ -227,6 +236,12 @@
     "storage": "Opslag",
     "attachments_max_size": "Max. grootte bijlagen (MB)",
     "image_sizes": "Afbeeldingsgroottes (px)",
+    "backup_import_limits": "Limieten voor back-upimport (MB)",
+    "backup_entry_size": "Per bestand",
+    "backup_total_size": "Totaal",
+    "import_limits": "Importlimieten (MB)",
+    "kml_max_size": "KML",
+    "provider_import_size": "Provider",
     "authentication": "Authenticatie",
     "token_expiration": "Token verloopt (min)",
     "access": "Toegang",
@@ -269,6 +284,7 @@
     "attachments": "Bijlagen",
     "new_booking": "Nieuwe boeking",
     "view_booking": "Boeking bekijken",
+    "day": "Dag",
     "days": "Dagen",
     "days_selected": "{0} dagen geselecteerd",
     "edit": "Bewerken",
@@ -289,6 +305,16 @@
       "boat": "⛴️ Boot",
       "generic": "📋 Algemeen"
     }
+  },
+  "calendar": {
+    "disable": "Agendasynchronisatie uitschakelen",
+    "enable": "Inschakelen",
+    "enable_desc": "Maak een privélink waarop je agenda-app zich kan abonneren om gesynchroniseerd te blijven.",
+    "not_enabled": "Agendasynchronisatie is niet ingeschakeld voor deze reis.",
+    "refresh_notice": "Je agenda-app bepaalt hoe vaak er wordt ververst. Google Agenda kan tot een dag duren.",
+    "stop_syncing": "Agendasynchronisatie van {{name}} stoppen? Bestaande abonnementen worden niet meer bijgewerkt.",
+    "subscribe_on_link": "Abonneer je op deze reis in je agenda-app met deze link:",
+    "title": "Agendasynchronisatie"
   },
   "support": {
     "support": "Steun TRIP",
@@ -341,6 +367,7 @@
     "password_updated": "Wachtwoord bijgewerkt",
     "password_error": "Kon wachtwoord niet bijwerken. Controleer of het huidige wachtwoord juist is.",
     "error_deleting_gapi": "Fout bij verwijderen GMaps API-sleutel",
+    "error_deleting_apprise_webhook": "Fout bij verwijderen Apprise webhook",
     "unsupported_file": "Niet-ondersteund bestand",
     "expected_csv": ".csv-bestand verwacht",
     "querying_gmaps": "Bezig met opvragen Google Maps API",
@@ -392,6 +419,7 @@
     "ready_to_paste": "Klaar om te plakken"
   },
   "empty_states": {
+    "checklist_empty": "Je checklist is leeg",
     "every_place_used": "Elke locatie is in gebruik",
     "no_attachments": "Geen bijlagen",
     "no_days": "Geen dagen",
@@ -412,6 +440,11 @@
       "delete_desc": "Bijlage verwijderen? Dit kan niet ongedaan worden gemaakt.",
       "download_all": "Alles downloaden"
     },
+    "checklist": {
+      "add": "Nieuwe Checklist",
+      "delete": "Checklist verwijderen",
+      "rename": "Checklist hernoemen"
+    },
     "day": {
       "add": "Dag(en) toevoegen",
       "delete": "Dag verwijderen",
@@ -424,12 +457,23 @@
       "add_packing": "Pakitem toevoegen",
       "add_poi": "Interessepunt toevoegen",
       "delete": "Item verwijderen",
-      "edit": "Item bewerken"
+      "edit": "Item bewerken",
+      "notify_dt": "Melden om"
+    },
+    "link": {
+      "delete": "Link verwijderen",
+      "delete_desc": "Deze link verwijderen?",
+      "edit": "Link bewerken"
     },
     "member": {
       "delete_desc": "{{name}} uit Trip verwijderen?",
       "invite": "Lid uitnodigen",
       "remove": "Lid verwijderen"
+    },
+    "packing_list": {
+      "add": "Nieuwe Paklijst",
+      "delete": "Paklijst verwijderen",
+      "rename": "Paklijst hernoemen"
     },
     "place": {
       "attached": "Gekoppelde locaties",
@@ -474,16 +518,18 @@
     "base": "Basis delen",
     "complete": "Volledig delen",
     "disable": "Delen uitschakelen",
+    "error_map_render": "Fout tijdens weergeven van kaart",
     "full": "Volledig delen",
     "fully": "volledig",
     "include_basic": "Basisgegevens opnemen: dagen, locaties, tijd, tekst...",
     "include_everything": "Alles opnemen (documenten, beschrijvingen, enz.)",
     "is": "is",
     "is_not_shared": "wordt momenteel niet gedeeld.",
+    "not_found": "Reis niet gevonden",
+    "not_found_desc": "De opgevraagde reis bestaat niet",
     "partially": "gedeeltelijk",
     "shared_on_link": "gedeeld via deze link:",
-    "stop_sharing": "Delen van {{name}} stoppen?",
-    "error_map_render": "Fout tijdens weergeven van kaart"
+    "stop_sharing": "Delen van {{name}} stoppen?"
   },
   "view": {
     "archival_notes": "Archiveringsnotities",
@@ -493,8 +539,10 @@
     "distance_km": "{{distance}} km",
     "drag_resize": "Sleep om grootte aan te passen. Dubbelklik om te resetten.",
     "off_show_bookings": "Boekingen verborgen",
+    "off_show_day_notes": "Dagnotities verborgen",
     "off_show_text": "Locatie tonen",
     "on_show_bookings": "Boekingen zichtbaar",
+    "on_show_day_notes": "Dagnotities zichtbaar",
     "on_show_text": "Tekst + locatie tonen",
     "open_navigation": "Navigatie openen",
     "places_count": "Locaties ({{count}})",
@@ -627,6 +675,11 @@
       }
     },
     "print": {
+      "days": {
+        "description": "Selecteer welke dagen op te nemen",
+        "selected": "{0} dagen geselecteerd",
+        "title": "Dagen"
+      },
       "metadata": {
         "description": "Metadata opnemen (prijs, dagen)",
         "title": "Metadata"
@@ -637,6 +690,11 @@
       "places": {
         "description": "Locatieoverzicht opnemen",
         "title": "Locatieoverzicht"
+      },
+      "places_detailed": {
+        "description": "Toon volledige locatiedetails (adres, coördinaten, prijs, beschrijving, links...). Kan het aantal afgedrukte pagina's aanzienlijk verhogen.",
+        "gpx_attached": "GPX-track bijgevoegd",
+        "title": "Gedetailleerd locatieoverzicht"
       },
       "properties": {
         "description": "Velden om op te nemen",

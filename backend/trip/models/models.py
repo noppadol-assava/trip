@@ -126,11 +126,6 @@ class PendingTOTP(BaseModel):
     username: str
 
 
-class TokenGoogleSearch(BaseModel):
-    q: str
-    category: str | None = None
-
-
 class ProviderPlaceResult(BaseModel):
     name: str | None = None
     place: str | None = None
@@ -166,6 +161,10 @@ class ConfigRead(BaseModel):
     PLACE_IMAGE_SIZE: int
     TRIP_IMAGE_SIZE: int
     ATTACHMENT_MAX_SIZE: int
+    BACKUP_IMPORT_MAX_ENTRY_SIZE: int
+    BACKUP_IMPORT_MAX_TOTAL_SIZE: int
+    KML_MAX_ENTRY_SIZE: int
+    PROVIDER_IMPORT_MAX_SIZE: int
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_MINUTES: int
     REGISTER_ENABLE: bool
@@ -183,6 +182,10 @@ class ConfigUpdate(BaseModel):
     PLACE_IMAGE_SIZE: int | None = None
     TRIP_IMAGE_SIZE: int | None = None
     ATTACHMENT_MAX_SIZE: int | None = None
+    BACKUP_IMPORT_MAX_ENTRY_SIZE: int | None = None
+    BACKUP_IMPORT_MAX_TOTAL_SIZE: int | None = None
+    KML_MAX_ENTRY_SIZE: int | None = None
+    PROVIDER_IMPORT_MAX_SIZE: int | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int | None = None
     REFRESH_TOKEN_EXPIRE_MINUTES: int | None = None
     REGISTER_ENABLE: bool | None = None
@@ -323,6 +326,7 @@ class User(UserBase, table=True):
     totp_enabled: bool = False
     totp_secret: str | None = None
     google_apikey: str | None = None
+    apprise_webhook_url: str | None = None
     map_provider: MapProvider = Field(default=MapProvider.OPENSTREETMAP)
     is_admin: bool = False
 
@@ -379,6 +383,7 @@ class UserUpdate(UserBase):
     currency: str | None = None
     do_not_display: list[str] | None = None
     google_apikey: str | None = None
+    apprise_webhook_url: str | None = None
     map_provider: MapProvider | None = None
 
 
@@ -387,6 +392,7 @@ class UserRead(UserBase):
     do_not_display: list[str]
     totp_enabled: bool
     google_apikey: bool
+    apprise_webhook_url: bool
     api_token: bool
     map_provider: str
     is_admin: bool
@@ -408,6 +414,7 @@ class UserRead(UserBase):
             show_dog_tag=obj.show_dog_tag,
             totp_enabled=obj.totp_enabled,
             google_apikey=True if obj.google_apikey else False,
+            apprise_webhook_url=True if obj.apprise_webhook_url else False,
             api_token=True if obj.api_token else False,
             map_provider=obj.map_provider.value,
             duplicate_dist=obj.duplicate_dist,
@@ -525,11 +532,6 @@ class PlaceCreate(PlaceBase):
     category_id: int
 
 
-class TokenPlaceCreate(PlaceBase):
-    image: str | None = None
-    category: str
-
-
 class PlaceUpdate(PlaceBase):
     name: str | None = None
     lat: float | None = None
@@ -586,6 +588,7 @@ class Trip(TripBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user: str = Field(foreign_key="user.username", ondelete="CASCADE", index=True)
     image_id: int | None = Field(default=None, foreign_key="image.id", ondelete="CASCADE")
+    ics_token: str | None = Field(default=None, index=True, unique=True)
 
     image: Image | None = Relationship(back_populates="trips")
     places: list["Place"] = Relationship(
@@ -599,6 +602,8 @@ class Trip(TripBase, table=True):
     shares: list["TripShare"] = Relationship(back_populates="trip", cascade_delete=True)
     packing_items: list["TripPackingListItem"] = Relationship(back_populates="trip", cascade_delete=True)
     checklist_items: list["TripChecklistItem"] = Relationship(back_populates="trip", cascade_delete=True)
+    packing_lists: list["TripPackingList"] = Relationship(back_populates="trip", cascade_delete=True)
+    checklists: list["TripChecklist"] = Relationship(back_populates="trip", cascade_delete=True)
     memberships: list["TripMember"] = Relationship(back_populates="trip", cascade_delete=True)
     attachments: list["TripAttachment"] = Relationship(back_populates="trip", cascade_delete=True)
 
@@ -748,11 +753,13 @@ class TripBookingCreate(TripBookingBase):
 
 
 class TripBookingUpdate(TripBookingBase):
+    day_id: int | None = None
     attachment_ids: list[int] = []
 
 
 class TripBookingRead(TripBookingBase):
     id: int
+    day_id: int
     attachments: list["TripAttachmentRead"]
 
     @classmethod
@@ -763,6 +770,7 @@ class TripBookingRead(TripBookingBase):
             label=obj.label,
             reference=obj.reference,
             notes=obj.notes,
+            day_id=obj.day_id,
             attachments=[TripAttachmentRead.serialize(att) for att in obj.attachments],
         )
 
@@ -920,6 +928,10 @@ class TripShareCreate(BaseModel):
     is_full_access: bool | None
 
 
+class TripCalendarDetails(BaseModel):
+    url: str
+
+
 class TripShare(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     token: str = Field(index=True, unique=True)
@@ -1012,10 +1024,32 @@ class TripPackingListItem(TripPackingListItemBase, table=True):
 
 
 class TripPackingListItemCreate(TripPackingListItemBase):
+    text: str
+    category: PackingListCategoryEnum
     packed: bool = False
 
+    @field_validator("text", mode="before")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("text must not be empty")
+        return value
 
-class TripPackingListItemUpdate(TripPackingListItemBase): ...
+
+class TripPackingListItemUpdate(TripPackingListItemBase):
+    @field_validator("text", "category", mode="before")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("must not be null")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("text must not be empty")
+        return value
 
 
 class TripPackingListItemRead(TripPackingListItemBase):
@@ -1035,6 +1069,7 @@ class TripPackingListItemRead(TripPackingListItemBase):
 class TripChecklistItemBase(SQLModel):
     text: str | None = None
     checked: bool | None = None
+    notify_dt: datetime | None = None
 
 
 class TripChecklistItem(TripChecklistItemBase, table=True):
@@ -1045,10 +1080,31 @@ class TripChecklistItem(TripChecklistItemBase, table=True):
 
 
 class TripChecklistItemCreate(TripChecklistItemBase):
+    text: str
     checked: bool = False
 
+    @field_validator("text", mode="before")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("text must not be empty")
+        return value
 
-class TripChecklistItemUpdate(TripChecklistItemBase): ...
+
+class TripChecklistItemUpdate(TripChecklistItemBase):
+    @field_validator("text", mode="before")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("must not be null")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("text must not be empty")
+        return value
 
 
 class TripChecklistItemRead(TripChecklistItemBase):
@@ -1060,6 +1116,214 @@ class TripChecklistItemRead(TripChecklistItemBase):
             id=obj.id,
             text=obj.text,
             checked=obj.checked,
+            notify_dt=obj.notify_dt,
+        )
+
+
+class TripPackingListEntryBase(SQLModel):
+    text: str | None = None
+    qt: int | None = None
+    category: PackingListCategoryEnum | None = None
+    packed: bool | None = None
+
+
+class TripPackingListEntry(TripPackingListEntryBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+    packing_list_id: int = Field(foreign_key="trippackinglist.id", ondelete="CASCADE", index=True)
+    packing_list: "TripPackingList" = Relationship(back_populates="items")
+
+
+class TripPackingListEntryCreate(TripPackingListEntryBase):
+    text: str
+    category: PackingListCategoryEnum
+    packed: bool = False
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("text must not be empty")
+        return value
+
+
+class TripPackingListEntryUpdate(TripPackingListEntryBase):
+    @field_validator("text", "category", mode="before")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("must not be null")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("text must not be empty")
+        return value
+
+
+class TripPackingListEntryRead(TripPackingListEntryBase):
+    id: int
+
+    @classmethod
+    def serialize(cls, obj: "TripPackingListEntry") -> "TripPackingListEntryRead":
+        return cls(
+            id=obj.id,
+            text=obj.text,
+            qt=obj.qt,
+            category=obj.category,
+            packed=obj.packed,
+        )
+
+
+class TripPackingListBase(SQLModel):
+    name: str | None = None
+
+
+class TripPackingList(TripPackingListBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+    trip_id: int = Field(foreign_key="trip.id", ondelete="CASCADE", index=True)
+    trip: Trip | None = Relationship(back_populates="packing_lists")
+    items: list[TripPackingListEntry] = Relationship(back_populates="packing_list", cascade_delete=True)
+
+
+class TripPackingListCreate(TripPackingListBase):
+    name: str
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def name_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("name must not be empty")
+        return value
+
+
+class TripPackingListUpdate(TripPackingListBase):
+    name: str
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def name_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("name must not be empty")
+        return value
+
+
+class TripPackingListRead(TripPackingListBase):
+    id: int
+    name: str
+    items: list[TripPackingListEntryRead]
+
+    @classmethod
+    def serialize(cls, obj: "TripPackingList") -> "TripPackingListRead":
+        return cls(
+            id=obj.id,
+            name=obj.name,
+            items=[TripPackingListEntryRead.serialize(i) for i in obj.items],
+        )
+
+
+class TripChecklistEntryBase(SQLModel):
+    text: str | None = None
+    checked: bool | None = None
+    notify_dt: datetime | None = None
+
+
+class TripChecklistEntry(TripChecklistEntryBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+    checklist_id: int = Field(foreign_key="tripchecklist.id", ondelete="CASCADE", index=True)
+    checklist: "TripChecklist" = Relationship(back_populates="items")
+
+
+class TripChecklistEntryCreate(TripChecklistEntryBase):
+    text: str
+    checked: bool = False
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("text must not be empty")
+        return value
+
+
+class TripChecklistEntryUpdate(TripChecklistEntryBase):
+    @field_validator("text", mode="before")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("must not be null")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("text must not be empty")
+        return value
+
+
+class TripChecklistEntryRead(TripChecklistEntryBase):
+    id: int
+
+    @classmethod
+    def serialize(cls, obj: "TripChecklistEntry") -> "TripChecklistEntryRead":
+        return cls(
+            id=obj.id,
+            text=obj.text,
+            checked=obj.checked,
+            notify_dt=obj.notify_dt,
+        )
+
+
+class TripChecklistBase(SQLModel):
+    name: str | None = None
+
+
+class TripChecklist(TripChecklistBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+    trip_id: int = Field(foreign_key="trip.id", ondelete="CASCADE", index=True)
+    trip: Trip | None = Relationship(back_populates="checklists")
+    items: list[TripChecklistEntry] = Relationship(back_populates="checklist", cascade_delete=True)
+
+
+class TripChecklistCreate(TripChecklistBase):
+    name: str
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def name_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("name must not be empty")
+        return value
+
+
+class TripChecklistUpdate(TripChecklistBase):
+    name: str
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def name_must_not_be_blank(cls, value):
+        if value is None or not str(value).strip():
+            raise ValueError("name must not be empty")
+        return value
+
+
+class TripChecklistRead(TripChecklistBase):
+    id: int
+    name: str
+    items: list[TripChecklistEntryRead]
+
+    @classmethod
+    def serialize(cls, obj: "TripChecklist") -> "TripChecklistRead":
+        return cls(
+            id=obj.id,
+            name=obj.name,
+            items=[TripChecklistEntryRead.serialize(i) for i in obj.items],
         )
 
 

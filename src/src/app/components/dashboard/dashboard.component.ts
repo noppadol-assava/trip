@@ -29,6 +29,7 @@ import {
   toArray,
 } from 'rxjs';
 import { Place, Category, ProviderBoundaries } from '../../types/poi';
+import { saveBlobAs } from '../../shared/utils';
 import { ProviderPlaceResult } from '../../types/provider';
 import { ApiService } from '../../services/api.service';
 import { PlaceBoxComponent } from '../../shared/place-box/place-box.component';
@@ -80,7 +81,7 @@ import { Trip } from '../../types/trip';
 import { PlaceListItemComponent } from '../../shared/place-list-item/place-list-item.component';
 import { PopoverModule } from 'primeng/popover';
 import { RouteManagerService } from '../../services/route-manager.service';
-import { AdminUser, AppConfig, MagicLink } from '../../types/admin';
+import { AdminUser, APP_CONFIG_MB_FIELDS, AppConfig, MagicLink } from '../../types/admin';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
@@ -321,6 +322,12 @@ export class DashboardComponent implements OnInit, AfterViewInit {
           },
         },
         {
+          label: 'Italiano',
+          command: () => {
+            this.updateLanguage('it');
+          },
+        },
+        {
           label: 'Nederlands',
           command: () => {
             this.updateLanguage('nl');
@@ -369,6 +376,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
       do_not_display: [],
       tile_layer: ['', Validators.required],
       _google_apikey: [null, { validators: [Validators.pattern('AIza[0-9A-Za-z\\-_]{35}')] }],
+      _apprise_webhook_url: [null],
       map_provider: [],
       duplicate_dist: [null, { validators: [Validators.min(0)] }],
     });
@@ -378,6 +386,10 @@ export class DashboardComponent implements OnInit, AfterViewInit {
       ATTACHMENT_MAX_SIZE: [0, [Validators.required, Validators.min(1)]],
       PLACE_IMAGE_SIZE: [0, [Validators.required]],
       TRIP_IMAGE_SIZE: [0, [Validators.required]],
+      BACKUP_IMPORT_MAX_ENTRY_SIZE: [0, [Validators.required, Validators.min(1)]],
+      BACKUP_IMPORT_MAX_TOTAL_SIZE: [0, [Validators.required, Validators.min(1)]],
+      KML_MAX_ENTRY_SIZE: [0, [Validators.required, Validators.min(1)]],
+      PROVIDER_IMPORT_MAX_SIZE: [0, [Validators.required, Validators.min(1)]],
       ACCESS_TOKEN_EXPIRE_MINUTES: [0, [Validators.required]],
       REFRESH_TOKEN_EXPIRE_MINUTES: [0, [Validators.required]],
       OIDC_DISCOVERY_URL: [''],
@@ -791,6 +803,21 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     this.places.update((places) => places.map((p) => (p.id === id ? { ...p, ...updates } : p)));
   }
 
+  onPlaceLinksUpdated(links: string[]) {
+    const selected = this.selectedPlace();
+    if (!selected) return;
+
+    const previousLinks = selected.links;
+    const newLinks = links.length ? links : undefined;
+    this.apiService
+      .putPlace(selected.id, { links: newLinks })
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.updatePlaceInList(selected.id, { links: newLinks }),
+        error: () => this.updatePlaceInList(selected.id, { links: previousLinks }),
+      });
+  }
+
   deletePlace() {
     const selected = this.selectedPlace();
     if (!selected) return;
@@ -1060,16 +1087,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
       .subscribe({
         next: (data) => {
           const blob = new Blob([data], { type: 'application/zip' });
-          const url = window.URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.download = backup.filename!;
-          anchor.href = url;
-
-          document.body.appendChild(anchor);
-          anchor.click();
-
-          document.body.removeChild(anchor);
-          window.URL.revokeObjectURL(url);
+          saveBlobAs(blob, backup.filename!);
         },
       });
   }
@@ -1091,9 +1109,13 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     const data = put || { ...this.settingsForm.value };
     if (!put) {
       delete data['_google_apikey'];
+      delete data['_apprise_webhook_url'];
       if (!this.settingsForm.get('duplicate_dist')?.value) data['duplicate_dist'] = 0;
       if (!this.settings()?.google_apikey && this.settingsForm.get('_google_apikey')?.value) {
         data['google_apikey'] = this.settingsForm.get('_google_apikey')?.value;
+      }
+      if (!this.settings()?.apprise_webhook_url && this.settingsForm.get('_apprise_webhook_url')?.value) {
+        data['apprise_webhook_url'] = this.settingsForm.get('_apprise_webhook_url')?.value;
       }
     }
 
@@ -1274,13 +1296,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     if (!selected?.gpx) return;
 
     const dataBlob = new Blob([selected.gpx]);
-    const downloadURL = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = downloadURL;
-    link.download = `TRIP_${selected.name}.gpx`;
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(downloadURL);
+    saveBlobAs(dataBlob, `TRIP_${selected.name}.gpx`);
   }
 
   removePlaceGPX() {
@@ -1632,6 +1648,38 @@ export class DashboardComponent implements OnInit, AfterViewInit {
               'error',
               this.translocoService.translate('common.status.error'),
               this.translocoService.translate('messages.error_deleting_gapi'),
+            ),
+        });
+      },
+    });
+  }
+
+  deleteAppriseWebhook() {
+    const modal = this.dialogService.open(YesNoModalComponent, {
+      header: this.translocoService.translate('common.actions.confirm'),
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: {
+        '640px': '90vw',
+      },
+      data: this.translocoService.translate('settings.delete_apprise_webhook'),
+    })!;
+
+    modal.onClose.subscribe({
+      next: (bool: boolean) => {
+        if (!bool) return;
+
+        this.apiService.putSettings({ apprise_webhook_url: null }).subscribe({
+          next: () =>
+            this.settings.update((settings) => (settings ? { ...settings, apprise_webhook_url: false } : settings)),
+          error: () =>
+            this.utilsService.toast(
+              'error',
+              this.translocoService.translate('common.status.error'),
+              this.translocoService.translate('messages.error_deleting_apprise_webhook'),
             ),
         });
       },
@@ -2292,8 +2340,9 @@ export class DashboardComponent implements OnInit, AfterViewInit {
   saveConfig() {
     if (!this.adminConfigForm.valid) return;
     const updatedConfig = { ...this.adminConfigForm.value };
-    if (updatedConfig.ATTACHMENT_MAX_SIZE != null)
-      updatedConfig.ATTACHMENT_MAX_SIZE = updatedConfig.ATTACHMENT_MAX_SIZE * 1024 * 1024;
+    for (const field of APP_CONFIG_MB_FIELDS) {
+      if (updatedConfig[field] != null) updatedConfig[field] = updatedConfig[field] * 1024 * 1024;
+    }
 
     this.apiService
       .adminPutConfig(updatedConfig)
@@ -2356,16 +2405,7 @@ export class DashboardComponent implements OnInit, AfterViewInit {
       .subscribe({
         next: (data) => {
           const blob = new Blob([data], { type: 'application/zip' });
-          const url = window.URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.download = backup.filename!;
-          anchor.href = url;
-
-          document.body.appendChild(anchor);
-          anchor.click();
-
-          document.body.removeChild(anchor);
-          window.URL.revokeObjectURL(url);
+          saveBlobAs(blob, backup.filename!);
         },
       });
   }

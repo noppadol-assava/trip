@@ -143,6 +143,10 @@ export interface SharedTripDetails {
   is_full_access?: boolean;
 }
 
+export interface TripCalendarDetails {
+  url: string;
+}
+
 export interface PackingItem {
   id: number;
   text: string;
@@ -155,12 +159,26 @@ export interface ChecklistItem {
   id: number;
   text: string;
   checked?: boolean;
+  notify_dt?: string | null;
+}
+
+export interface PackingList {
+  id: number;
+  name: string;
+  items: PackingItem[];
+}
+
+export interface ChecklistList {
+  id: number;
+  name: string;
+  items: ChecklistItem[];
 }
 
 export interface PrintOptions {
   days: Set<number>;
   props: Set<string>;
   places: boolean;
+  placesDetailed?: boolean;
   notes: boolean;
   metadata: boolean;
   showBookings?: boolean;

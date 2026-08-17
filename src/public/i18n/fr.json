@@ -20,6 +20,7 @@
     "add_booking": "réservation",
     "attachments": "Pièces jointes",
     "cancel": "Annuler",
+    "day": "Jour",
     "days": "Jours",
     "days_selected": "{0} jours sélectionnés",
     "delete": "Supprimer",
@@ -41,6 +42,16 @@
     },
     "upload_new": "Télécharger un nouveau",
     "view_booking": "Voir la réservation"
+  },
+  "calendar": {
+    "disable": "Désactiver la synchronisation",
+    "enable": "Activer",
+    "enable_desc": "Créer un lien privé auquel votre application de calendrier peut s'abonner pour rester synchronisée.",
+    "not_enabled": "La synchronisation du calendrier n'est pas activée pour ce voyage.",
+    "refresh_notice": "Votre application de calendrier décide de la fréquence d'actualisation. Google Agenda peut prendre jusqu'à un jour.",
+    "stop_syncing": "Arrêter la synchronisation du calendrier de {{name}} ? Les abonnements existants ne seront plus mis à jour.",
+    "subscribe_on_link": "Abonnez-vous à ce voyage dans votre application de calendrier avec ce lien :",
+    "title": "Synchronisation calendrier"
   },
   "clipboard": {
     "confirm_paste": "Confirmer le collage",
@@ -94,27 +105,33 @@
       "update": "Mettre à jour"
     },
     "fields": {
+      "actions": "Actions",
       "attachments": "Pièces jointes",
       "categories": "Catégories",
       "category": "Catégorie",
       "checklist": "Checklist",
+      "collaboration": "Collaboration",
       "color": "Couleur",
       "cols": "Colonnes",
       "comment": "Commentaire",
       "coordinates": "Coordonnées",
+      "csv": "CSV",
       "currency": "Devise",
       "date": "Date",
       "date_range": "Période",
       "day": "Jour",
       "days": "Jours",
+      "default": "Par défaut",
       "description": "Description",
       "distance": "Distance",
       "gpx": "GPX",
+      "ics": "Calendrier (.ics)",
       "image": "Image",
       "itinerary": "Itinéraire",
       "label": "Libellé",
       "latitude": "Latitude",
       "links": "Liens",
+      "lists": "Listes",
       "longitude": "Longitude",
       "map": "Carte",
       "markdown_hint": "Markdown pris en charge",
@@ -124,6 +141,7 @@
       "notes": "Notes",
       "packing_list": "Liste de bagages",
       "password": "Mot de passe",
+      "pdf": "PDF",
       "place": "Place",
       "places": "Places",
       "plan": "Plan",
@@ -148,7 +166,6 @@
       "success": "Succès",
       "unplanned": "Non planifié",
       "wait": "Cela peut prendre un moment. Veuillez patienter.",
-      "wip": "En cours - Bientôt disponible !",
       "with_status": "Avec le statut"
     }
   },
@@ -179,6 +196,7 @@
     "mins": "{{count}} mins"
   },
   "empty_states": {
+    "checklist_empty": "Votre liste est vide",
     "every_place_used": "Toutes les places sont utilisées",
     "no_attachments": "Aucune pièce jointe",
     "no_days": "Aucun jour",
@@ -199,6 +217,11 @@
       "delete_desc": "Supprimer la pièce jointe ? Cette action est irréversible.",
       "download_all": "Tout télécharger"
     },
+    "checklist": {
+      "add": "Nouvelle Checklist",
+      "delete": "Supprimer la Checklist",
+      "rename": "Renommer la Checklist"
+    },
     "day": {
       "add": "Ajouter un(des) Jour(s)",
       "delete": "Supprimer le Jour",
@@ -211,12 +234,23 @@
       "add_packing": "Ajouter un Bagage",
       "add_poi": "Ajouter un Point d'Intérêt",
       "delete": "Supprimer l'Élément",
-      "edit": "Modifier l'Élément"
+      "edit": "Modifier l'Élément",
+      "notify_dt": "Notifier à"
+    },
+    "link": {
+      "delete": "Supprimer le Lien",
+      "delete_desc": "Supprimer ce lien ?",
+      "edit": "Modifier le Lien"
     },
     "member": {
       "delete_desc": "Supprimer {{name}} du Voyage ?",
       "invite": "Inviter un Membre",
       "remove": "Retirer le Membre"
+    },
+    "packing_list": {
+      "add": "Nouvelle Liste de Bagages",
+      "delete": "Supprimer la Liste de Bagages",
+      "rename": "Renommer la Liste de Bagages"
     },
     "place": {
       "attached": "Places attachées",
@@ -280,6 +314,7 @@
     "delete_plans_count": "Supprimer {{count}} plan(s) ? Cette action est irréversible.",
     "delete_user_failed": "Échec de la suppression de l'utilisateur",
     "duplicate_count": "Dupliquer {{count}} plan(s) ?",
+    "error_deleting_apprise_webhook": "Erreur lors de la suppression du webhook Apprise",
     "error_deleting_gapi": "Erreur lors de la suppression de la clé API GMaps",
     "error_disabling": "Erreur lors de la désactivation du TOTP",
     "error_totp": "Erreur lors de l'activation du TOTP",
@@ -447,6 +482,11 @@
         "description": "Inclure les réservations des jours",
         "title": "Réservations"
       },
+      "days": {
+        "description": "Sélectionnez les jours à inclure",
+        "selected": "{0} jours sélectionnés",
+        "title": "Jours"
+      },
       "images": {
         "description": "Inclure les images des étapes"
       },
@@ -460,6 +500,11 @@
       "places": {
         "description": "Inclure le récapitulatif des places",
         "title": "Récapitulatif des places"
+      },
+      "places_detailed": {
+        "description": "Afficher tous les détails des places (adresse, coordonnées, prix, description, liens...). Peut considérablement augmenter le nombre de pages imprimées.",
+        "gpx_attached": "Trace GPX associée",
+        "title": "Récapitulatif détaillé des places"
       },
       "properties": {
         "description": "Champs à inclure",
@@ -520,10 +565,15 @@
     "allow_registration": "Autoriser les utilisateurs à s'inscrire eux-mêmes",
     "always_display_visited": "Afficher les places visitées",
     "always_display_visited_desc": "Toujours afficher les places visitées sous forme de petits points",
-    "api_key": "Clé API",
+    "api_key": "Clé API TRIP",
     "api_key_desc": "Utilisez-la pour vous authentifier dans vos scripts",
+    "apprise_webhook": "Webhook Apprise",
+    "apprise_webhook_desc": "Recevez des notifications pour les éléments de checklist planifiés via une URL Apprise",
     "attachments_max_size": "Taille max des pièces jointes (Mo)",
     "authentication": "Authentification",
+    "backup_entry_size": "Par fichier",
+    "backup_import_limits": "Limites d'import des sauvegardes (Mo)",
+    "backup_total_size": "Total",
     "backups": "Sauvegardes",
     "category_add": "Ajouter une catégorie",
     "category_delete": "Supprimer la catégorie",
@@ -542,6 +592,7 @@
     "default_lng": "Longitude par défaut",
     "default_map_tile": "Calque de carte par défaut",
     "defaults": "Valeurs par défaut",
+    "delete_apprise_webhook": "Êtes-vous sûr de vouloir supprimer le webhook Apprise ?",
     "delete_gapi_key": "Êtes-vous sûr de vouloir supprimer la clé API GMaps ?",
     "delete_user": "Supprimer l'utilisateur",
     "delete_user_message": "Supprimer définitivement {{name}} et toutes ses données ? Cette action est irréversible.",
@@ -566,7 +617,9 @@
     "gpx_indicator_desc": "Afficher une boussole quand des données GPX sont disponibles",
     "handle_with_care": "Manipuler avec précaution",
     "image_sizes": "Tailles des images (px)",
+    "import_limits": "Limites d'import (Mo)",
     "integrations": "Intégrations",
+    "kml_max_size": "KML",
     "language": "Changer de langue",
     "lat": "Lat",
     "latest_version": "Dernière version",
@@ -596,6 +649,7 @@
     "processing": "Traitement en cours...",
     "provider": "Fournisseur de carte",
     "provider_desc": "Sélectionnez le fournisseur de carte par défaut",
+    "provider_import_size": "Fournisseur",
     "provider_placeholder": "Fournisseur",
     "refresh": "Actualiser",
     "registration": "Inscription",
@@ -638,6 +692,8 @@
     "include_everything": "Tout inclure (documents, descriptions, etc.)",
     "is": "est",
     "is_not_shared": "n'est pas actuellement partagé.",
+    "not_found": "Voyage introuvable",
+    "not_found_desc": "Le voyage demandé n'existe pas",
     "partially": "partiellement",
     "shared_on_link": "partagé sur ce lien :",
     "stop_sharing": "Arrêter le partage de {{name}} ?"
@@ -674,8 +730,10 @@
     "distance_km": "{{distance}} km",
     "drag_resize": "Faites glisser pour redimensionner. Double-cliquez pour réinitialiser.",
     "off_show_bookings": "Réservations masquées",
+    "off_show_day_notes": "Notes du jour masquées",
     "off_show_text": "Afficher la Place",
     "on_show_bookings": "Réservations affichées",
+    "on_show_day_notes": "Notes du jour affichées",
     "on_show_text": "Afficher le Texte + Place",
     "open_navigation": "Ouvrir la Navigation",
     "places_count": "Places ({{count}})",

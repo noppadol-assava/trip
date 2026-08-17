@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,8 +11,9 @@ from starlette.middleware.gzip import GZipMiddleware
 from . import __version__
 from .config import ensure_secret_key, get_settings, migrate_config_file
 from .db.core import init_and_migrate_db
+from .notify import notify_loop
 from .routers import (admin, auth, bookings, categories, places, providers,
-                      settings, token, trips)
+                      settings, trips)
 from .utils.utils import silence_http_logging
 
 migrate_config_file()
@@ -29,7 +31,9 @@ async def lifespan(app: FastAPI):
     ensure_secret_key()
     await init_and_migrate_db()
     silence_http_logging()
+    notify_task = asyncio.create_task(notify_loop())
     yield
+    notify_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -50,7 +54,6 @@ app.include_router(categories.router)
 app.include_router(places.router)
 app.include_router(settings.router)
 app.include_router(trips.router)
-app.include_router(token.router)
 app.include_router(providers.router)
 app.include_router(admin.router)
 

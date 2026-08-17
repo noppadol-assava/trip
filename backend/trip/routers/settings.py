@@ -10,7 +10,7 @@ from ..config import get_settings
 from ..deps import SessionDep, get_current_username
 from ..models.models import (Backup, BackupRead, BackupStatus, User, UserRead,
                              UserUpdate)
-from ..security import generate_totp_secret, verify_totp_code
+from ..security import generate_totp_secret, hash_api_token, verify_totp_code
 from ..utils.utils import check_update, generate_urlsafe
 from ..utils.zip import (process_backup_export, process_backup_import,
                          process_legacy_import)
@@ -37,6 +37,14 @@ def put_user_settings(
         user_data["do_not_display"] = (
             ",".join(user_data["do_not_display"]) if user_data["do_not_display"] else ""
         )
+
+    apprise_webhook_url = user_data.get("apprise_webhook_url")
+    if (
+        apprise_webhook_url
+        and not db_user.apprise_webhook_url
+        and not apprise_webhook_url.endswith("/?avatar=No")
+    ):
+        user_data["apprise_webhook_url"] = apprise_webhook_url + "/?avatar=No"
 
     for key, value in user_data.items():
         setattr(db_user, key, value)
@@ -215,7 +223,7 @@ def generate_user_api_token(
         raise HTTPException(status_code=400, detail="Bad request")
 
     token = generate_urlsafe()
-    setattr(db_user, "api_token", token)
+    setattr(db_user, "api_token", hash_api_token(token))
     session.add(db_user)
     session.commit()
     return token

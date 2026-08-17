@@ -7,7 +7,9 @@ import { Info } from '../types/info';
 import { Backup, ImportResponse, Settings } from '../types/settings';
 import {
   ChecklistItem,
+  ChecklistList,
   PackingItem,
+  PackingList,
   SharedTripDetails,
   Trip,
   TripAttachment,
@@ -15,16 +17,25 @@ import {
   TripBase,
   TripBooking,
   TripDay,
+  TripCalendarDetails,
   TripInvitation,
   TripItem,
   TripMember,
 } from '../types/trip';
-import { AdminUser, AppConfig, MagicLink } from '../types/admin';
+import { AdminUser, APP_CONFIG_MB_FIELDS, AppConfig, MagicLink } from '../types/admin';
 import { TranslocoService } from '@jsverse/transloco';
 
 const NO_AUTH_HEADER = {
   no_auth: '1',
 };
+
+function bytesToMb(config: AppConfig): AppConfig {
+  const converted = { ...config };
+  for (const field of APP_CONFIG_MB_FIELDS) {
+    (converted as any)[field] = (config[field] as number) / (1024 * 1024);
+  }
+  return converted;
+}
 
 @Injectable({
   providedIn: 'root',
@@ -210,6 +221,35 @@ export class ApiService {
     return this.httpClient.delete<null>(`${this.apiBaseUrl}/trips/${tripId}/share`);
   }
 
+  downloadTripIcs(tripId: number): Observable<Blob> {
+    return this.httpClient.get(`${this.apiBaseUrl}/trips/${tripId}/ics`, { responseType: 'blob' });
+  }
+
+  downloadSharedTripIcs(token: string): Observable<Blob> {
+    return this.httpClient.get(`${this.apiBaseUrl}/trips/shared/${token}/ics`, {
+      responseType: 'blob',
+      headers: NO_AUTH_HEADER,
+    });
+  }
+
+  getTripCalendar(tripId: number): Observable<TripCalendarDetails> {
+    return this.httpClient
+      .get<TripCalendarDetails>(`${this.apiBaseUrl}/trips/${tripId}/calendar`, {
+        headers: { ignore_not_found: 'true' },
+      })
+      .pipe(map((resp) => ({ ...resp, url: window.location.origin + resp.url })));
+  }
+
+  createTripCalendar(tripId: number): Observable<TripCalendarDetails> {
+    return this.httpClient
+      .post<TripCalendarDetails>(`${this.apiBaseUrl}/trips/${tripId}/calendar`, {})
+      .pipe(map((resp) => ({ ...resp, url: window.location.origin + resp.url })));
+  }
+
+  deleteTripCalendar(tripId: number): Observable<null> {
+    return this.httpClient.delete<null>(`${this.apiBaseUrl}/trips/${tripId}/calendar`);
+  }
+
   getPackingList(tripId: number): Observable<PackingItem[]> {
     return this.httpClient.get<PackingItem[]>(`${this.apiBaseUrl}/trips/${tripId}/packing`);
   }
@@ -248,6 +288,90 @@ export class ApiService {
 
   deleteChecklistItem(tripId: number, id: number): Observable<null> {
     return this.httpClient.delete<null>(`${this.apiBaseUrl}/trips/${tripId}/checklist/${id}`);
+  }
+
+  getPackingLists(tripId: number): Observable<PackingList[]> {
+    return this.httpClient.get<PackingList[]>(`${this.apiBaseUrl}/trips/${tripId}/packing-lists`);
+  }
+
+  getSharedTripPackingLists(token: string): Observable<PackingList[]> {
+    return this.httpClient.get<PackingList[]>(`${this.apiBaseUrl}/trips/shared/${token}/packing-lists`);
+  }
+
+  postPackingList(tripId: number, name: string): Observable<PackingList> {
+    return this.httpClient.post<PackingList>(`${this.apiBaseUrl}/trips/${tripId}/packing-lists`, { name });
+  }
+
+  putPackingList(tripId: number, listId: number, name: string): Observable<PackingList> {
+    return this.httpClient.put<PackingList>(`${this.apiBaseUrl}/trips/${tripId}/packing-lists/${listId}`, {
+      name,
+    });
+  }
+
+  deletePackingList(tripId: number, listId: number): Observable<null> {
+    return this.httpClient.delete<null>(`${this.apiBaseUrl}/trips/${tripId}/packing-lists/${listId}`);
+  }
+
+  postPackingListItem(tripId: number, listId: number, item: PackingItem): Observable<PackingItem> {
+    return this.httpClient.post<PackingItem>(`${this.apiBaseUrl}/trips/${tripId}/packing-lists/${listId}/items`, item);
+  }
+
+  putPackingListItem(
+    tripId: number,
+    listId: number,
+    itemId: number,
+    item: Partial<PackingItem>,
+  ): Observable<PackingItem> {
+    return this.httpClient.put<PackingItem>(
+      `${this.apiBaseUrl}/trips/${tripId}/packing-lists/${listId}/items/${itemId}`,
+      item,
+    );
+  }
+
+  deletePackingListItem(tripId: number, listId: number, itemId: number): Observable<null> {
+    return this.httpClient.delete<null>(`${this.apiBaseUrl}/trips/${tripId}/packing-lists/${listId}/items/${itemId}`);
+  }
+
+  getChecklists(tripId: number): Observable<ChecklistList[]> {
+    return this.httpClient.get<ChecklistList[]>(`${this.apiBaseUrl}/trips/${tripId}/checklists`);
+  }
+
+  getSharedTripChecklists(token: string): Observable<ChecklistList[]> {
+    return this.httpClient.get<ChecklistList[]>(`${this.apiBaseUrl}/trips/shared/${token}/checklists`);
+  }
+
+  postChecklist(tripId: number, name: string): Observable<ChecklistList> {
+    return this.httpClient.post<ChecklistList>(`${this.apiBaseUrl}/trips/${tripId}/checklists`, { name });
+  }
+
+  putChecklist(tripId: number, listId: number, name: string): Observable<ChecklistList> {
+    return this.httpClient.put<ChecklistList>(`${this.apiBaseUrl}/trips/${tripId}/checklists/${listId}`, {
+      name,
+    });
+  }
+
+  deleteChecklist(tripId: number, listId: number): Observable<null> {
+    return this.httpClient.delete<null>(`${this.apiBaseUrl}/trips/${tripId}/checklists/${listId}`);
+  }
+
+  postChecklistListItem(tripId: number, listId: number, item: ChecklistItem): Observable<ChecklistItem> {
+    return this.httpClient.post<ChecklistItem>(`${this.apiBaseUrl}/trips/${tripId}/checklists/${listId}/items`, item);
+  }
+
+  putChecklistListItem(
+    tripId: number,
+    listId: number,
+    itemId: number,
+    item: Partial<ChecklistItem>,
+  ): Observable<ChecklistItem> {
+    return this.httpClient.put<ChecklistItem>(
+      `${this.apiBaseUrl}/trips/${tripId}/checklists/${listId}/items/${itemId}`,
+      item,
+    );
+  }
+
+  deleteChecklistListItem(tripId: number, listId: number, itemId: number): Observable<null> {
+    return this.httpClient.delete<null>(`${this.apiBaseUrl}/trips/${tripId}/checklists/${listId}/items/${itemId}`);
   }
 
   getHasTripsInvitations(): Observable<boolean> {
@@ -454,15 +578,13 @@ export class ApiService {
   }
 
   adminGetConfig(): Observable<AppConfig> {
-    return this.httpClient
-      .get<AppConfig>(this.apiBaseUrl + '/admin/config')
-      .pipe(map((config) => ({ ...config, ATTACHMENT_MAX_SIZE: config.ATTACHMENT_MAX_SIZE / (1024 * 1024) })));
+    return this.httpClient.get<AppConfig>(this.apiBaseUrl + '/admin/config').pipe(map((config) => bytesToMb(config)));
   }
 
   adminPutConfig(config: Partial<AppConfig>): Observable<AppConfig> {
     return this.httpClient
       .put<AppConfig>(this.apiBaseUrl + '/admin/config', { ...config })
-      .pipe(map((config) => ({ ...config, ATTACHMENT_MAX_SIZE: config.ATTACHMENT_MAX_SIZE / (1024 * 1024) })));
+      .pipe(map((config) => bytesToMb(config)));
   }
 
   adminGetBackups(): Observable<Backup[]> {

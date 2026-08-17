@@ -27,7 +27,9 @@ import {
   TripItem,
   TripStatus,
   PackingItem,
+  PackingList,
   ChecklistItem,
+  ChecklistList,
   TripAttachment,
   PrintOptions,
   ViewTripItem,
@@ -47,18 +49,18 @@ import {
 } from '../../shared/map';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DialogService } from 'primeng/dynamicdialog';
-import { debounceTime, distinctUntilChanged, Observable, take } from 'rxjs';
+import { debounceTime, distinctUntilChanged, forkJoin, Observable, take } from 'rxjs';
 import { UtilsService } from '../../services/utils.service';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
 import { MarkdownPipe } from '../../shared/pipes/markdown.pipe';
+import { NaturalDurationPipe } from '../../shared/pipes/naturalduration.pipe';
 import { DialogModule } from 'primeng/dialog';
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { TooltipModule } from 'primeng/tooltip';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { CheckboxModule } from 'primeng/checkbox';
-import { generateTripICSFile } from '../../shared/trip-base/ics';
 import { generateTripCSVFile } from '../../shared/trip-base/csv';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FileSizePipe } from '../../shared/pipes/filesize.pipe';
@@ -66,7 +68,9 @@ import {
   bookingTypeClass as sharedBookingTypeClass,
   bookingTypeIcon as sharedBookingTypeIcon,
   computeDistLatLng,
+  saveBlobAs,
   sortBookings as sharedSortBookings,
+  tripFilename,
 } from '../../shared/utils';
 import { TabList, TabsModule } from 'primeng/tabs';
 import { PlaceBoxContentComponent } from '../../shared/place-box-content/place-box-content.component';
@@ -76,6 +80,7 @@ import { ToggleButtonModule } from 'primeng/togglebutton';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { LinkChipComponent } from '../../shared/link-chip/link-chip.component';
 import { ItemGalleryComponent } from '../../shared/item-gallery/item-gallery.component';
+import { TripSkeletonComponent } from '../../shared/trip-skeleton/trip-skeleton.component';
 
 const HIGHLIGHT_COLORS = [
   '#e6194b',
@@ -106,6 +111,7 @@ const MAX_MAP_INIT_RETRIES = 5;
     MenuModule,
     InputTextModule,
     MarkdownPipe,
+    NaturalDurationPipe,
     FloatLabelModule,
     TableModule,
     ButtonModule,
@@ -123,6 +129,7 @@ const MAX_MAP_INIT_RETRIES = 5;
     TranslocoDirective,
     LinkChipComponent,
     ItemGalleryComponent,
+    TripSkeletonComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './shared-trip.component.html',
@@ -154,6 +161,10 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   hasError = signal(false);
   packingList = signal<PackingItem[]>([]);
   checklistItems = signal<ChecklistItem[]>([]);
+  packingLists = signal<PackingList[]>([]);
+  checklists = signal<ChecklistList[]>([]);
+  activePackingTab = signal<number | 'default'>('default');
+  activeChecklistTab = signal<number | 'default'>('default');
 
   searchQuery = signal('');
   isPlansPanelCollapsed = signal(false);
@@ -191,10 +202,12 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   printOptionsPlaces = computed(() => {
     const options = this.printOptions();
     const places: Set<Place> = new Set();
+    const seenIds = new Set<number>();
     this.trip()?.days.forEach((d) => {
       if (!options?.days.has(d.id)) return;
       d.items.forEach((i) => {
-        if (!i.place) return;
+        if (!i.place || seenIds.has(i.place.id)) return;
+        seenIds.add(i.place.id);
         places.add(i.place);
       });
     });
@@ -420,6 +433,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   availableItemProps = ['place', 'comment', 'latlng', 'price', 'status', 'distance'];
 
   map?: L.Map;
+  mapReady = signal(false);
   markerClusterGroup?: L.MarkerClusterGroup;
   tripMapAntLayer?: L.FeatureGroup;
   markers = new Map<number, L.Marker>();
@@ -446,17 +460,17 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
         label: this.translocoService.translate('common.actions.export'),
         items: [
           {
-            label: 'Calendar (.ics)',
+            label: this.translocoService.translate('common.fields.ics'),
             icon: 'pi pi-calendar',
-            command: () => generateTripICSFile(this.trip()!, this.utilsService),
+            command: () => this.downloadIcs(),
           },
           {
-            label: 'CSV',
+            label: this.translocoService.translate('common.fields.csv'),
             icon: 'pi pi-file',
             command: () => generateTripCSVFile(this.trip()!),
           },
           {
-            label: 'PDF',
+            label: this.translocoService.translate('common.fields.pdf'),
             icon: 'pi pi-print',
             command: () => this.togglePrint(),
           },
@@ -642,6 +656,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       this.map.remove();
       this.map = undefined;
     }
+    this.mapReady.set(false);
   }
 
   getItemDayLabel(item: ViewTripItem): string {
@@ -699,7 +714,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       },
     ];
 
-    this.map = createMap(contextMenuItems);
+    this.map = createMap(contextMenuItems, undefined, () => this.mapReady.set(true));
     this.markerClusterGroup = createClusterGroup().addTo(this.map);
     this.updateMapVisualization(this.tripViewModel());
     this.resetMapBounds();
@@ -798,7 +813,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   openMenuSelectedItemActions(event: any, item: any) {
     this.menuSelectedItemActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('view.open_navigation'),
@@ -814,7 +829,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   openMenuPlanDayActionsItems(event: any, d: TripDay) {
     this.menuPlanDayActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('common.fields.summary'),
@@ -839,7 +854,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
 
   openMenuTripActionsItems(event: any) {
     const lists = {
-      label: 'Lists',
+      label: this.translocoService.translate('common.fields.lists'),
       items: [
         {
           label: this.translocoService.translate('common.fields.attachments'),
@@ -867,7 +882,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       label: this.translocoService.translate('common.fields.trip'),
       items: [
         {
-          label: 'PDF',
+          label: this.translocoService.translate('common.fields.pdf'),
           icon: 'pi pi-print',
           command: () => {
             this.togglePrint();
@@ -883,7 +898,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
   openMenuSelectedDayActions(event: any, d: TripDay) {
     this.menuSelectedDayActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('view.open_navigation'),
@@ -942,9 +957,31 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       if (!data) return;
       this.printOptions.set(data);
       this.changeDetectionRef.detectChanges();
-      window.print();
-      this.printOptions.set(null);
+      this.waitForPrintImages().then(() => {
+        window.print();
+        this.printOptions.set(null);
+      });
     });
+  }
+
+  waitForPrintImages(timeoutMs = 3000): Promise<void> {
+    const pending = Array.from(document.querySelectorAll<HTMLImageElement>('#print-section img')).filter(
+      (img) => !img.complete,
+    );
+    if (!pending.length) return Promise.resolve();
+
+    const loaded = Promise.all(
+      pending.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            img.addEventListener('load', () => resolve(), { once: true });
+            img.addEventListener('error', () => resolve(), { once: true });
+          }),
+      ),
+    ).then(() => undefined);
+
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
+    return Promise.race([loaded, timeout]);
   }
 
   toggleFiltering() {
@@ -1201,17 +1238,33 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
 
   openPackingList() {
     if (!this.token) return;
-    this.apiService.getSharedTripPackingList(this.token).subscribe((items) => {
+    const token = this.token;
+    forkJoin([
+      this.apiService.getSharedTripPackingList(token),
+      this.apiService.getSharedTripPackingLists(token),
+    ]).subscribe(([items, lists]) => {
       this.packingList.set(items);
+      this.packingLists.set(lists);
+      this.activePackingTab.set('default');
       this.isPackingDialogVisible = !this.isPackingDialogVisible;
       this.computeMenuTripPackingItems();
     });
   }
 
+  dispPackingListFor(items: PackingItem[]): Record<string, PackingItem[]> {
+    const sorted = [...items].sort((a, b) =>
+      a.packed !== b.packed ? (a.packed ? 1 : -1) : a.text.localeCompare(b.text),
+    );
+    return sorted.reduce<Record<string, PackingItem[]>>((acc, item) => {
+      (acc[item.category] ??= []).push(item);
+      return acc;
+    }, {});
+  }
+
   computeMenuTripPackingItems() {
     this.menuTripPackingItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('clipboard.copy_to_clipboard'),
@@ -1253,10 +1306,25 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
 
   openChecklist() {
     if (!this.token) return;
-    this.apiService.getSharedTripChecklist(this.token).subscribe((items) => {
-      this.checklistItems.set(items);
-      this.isChecklistDialogVisible = !this.isChecklistDialogVisible;
-    });
+    const token = this.token;
+    forkJoin([this.apiService.getSharedTripChecklist(token), this.apiService.getSharedTripChecklists(token)]).subscribe(
+      ([items, checklists]) => {
+        this.checklistItems.set(items);
+        this.checklists.set(checklists);
+        this.activeChecklistTab.set('default');
+        this.isChecklistDialogVisible = !this.isChecklistDialogVisible;
+      },
+    );
+  }
+
+  dispChecklistFor(items: ChecklistItem[]): ChecklistItem[] {
+    return [...items].sort((a, b) => (a.checked !== b.checked ? (a.checked ? 1 : -1) : b.id - a.id));
+  }
+
+  checklistProgress(items: ChecklistItem[]): { done: number; total: number; pct: number } {
+    const total = items.length;
+    const done = items.filter((i) => i.checked).length;
+    return { done, total, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
   }
 
   openAttachmentsModal() {
@@ -1271,13 +1339,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
 
     const itemName = item?.text || placeItems[this.selectedPlaceActiveTabIndex()]?.text || 'item';
     const dataBlob = new Blob([gpx]);
-    const downloadURL = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = downloadURL;
-    link.download = `TRIP_${this.trip()!.name}_${itemName}.gpx`;
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(downloadURL);
+    saveBlobAs(dataBlob, `${tripFilename(this.trip()!.name)}_${itemName}.gpx`);
   }
 
   itemToNavigation() {
@@ -1306,6 +1368,16 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
     openNavigation(items.map((item) => ({ lat: item.lat!, lng: item.lng! })));
   }
 
+  downloadIcs() {
+    if (!this.token) return;
+    this.apiService
+      .downloadSharedTripIcs(this.token)
+      .pipe(take(1))
+      .subscribe({
+        next: (data) => saveBlobAs(data, tripFilename(this.trip()!.name, 'ics')),
+      });
+  }
+
   downloadAttachment(attachment: TripAttachment) {
     if (!this.token) return;
     this.apiService
@@ -1314,16 +1386,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (data) => {
           const blob = new Blob([data], { type: 'application/pdf' });
-          const url = window.URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.download = attachment.filename;
-          anchor.href = url;
-
-          document.body.appendChild(anchor);
-          anchor.click();
-
-          document.body.removeChild(anchor);
-          window.URL.revokeObjectURL(url);
+          saveBlobAs(blob, attachment.filename);
         },
       });
   }
@@ -1336,16 +1399,7 @@ export class SharedTripComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (data) => {
           const blob = new Blob([data], { type: 'application/zip' });
-          const url = window.URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.download = `TRIP_${this.trip()!.name}_attachments.zip`;
-          anchor.href = url;
-
-          document.body.appendChild(anchor);
-          anchor.click();
-
-          document.body.removeChild(anchor);
-          window.URL.revokeObjectURL(url);
+          saveBlobAs(blob, `${tripFilename(this.trip()!.name)}_attachments.zip`);
         },
       });
   }

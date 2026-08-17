@@ -27,7 +27,9 @@ import {
   TripItem,
   TripStatus,
   PackingItem,
+  PackingList,
   ChecklistItem,
+  ChecklistList,
   TripMember,
   TripAttachment,
   PrintOptions,
@@ -60,6 +62,7 @@ import { CommonModule, DecimalPipe } from '@angular/common';
 import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
 import { MarkdownPipe } from '../../shared/pipes/markdown.pipe';
+import { NaturalDurationPipe } from '../../shared/pipes/naturalduration.pipe';
 import { PlaceCreateModalComponent } from '../../modals/place-create-modal/place-create-modal.component';
 import { Settings } from '../../types/settings';
 import { DialogModule } from 'primeng/dialog';
@@ -70,10 +73,10 @@ import { MultiSelectModule } from 'primeng/multiselect';
 import { CheckboxChangeEvent, CheckboxModule } from 'primeng/checkbox';
 import { TripCreatePackingModalComponent } from '../../modals/trip-create-packing-modal/trip-create-packing-modal.component';
 import { TripCreateChecklistModalComponent } from '../../modals/trip-create-checklist-modal/trip-create-checklist-modal.component';
+import { TripListNameModalComponent } from '../../modals/trip-list-name-modal/trip-list-name-modal.component';
 import { TripInviteMemberModalComponent } from '../../modals/trip-invite-member-modal/trip-invite-member-modal.component';
 import { TripNotesModalComponent } from '../../modals/trip-notes-modal/trip-notes-modal.component';
 import { TripArchiveModalComponent } from '../../modals/trip-archive-modal/trip-archive-modal.component';
-import { generateTripICSFile } from '../../shared/trip-base/ics';
 import { generateTripCSVFile } from '../../shared/trip-base/csv';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FileSizePipe } from '../../shared/pipes/filesize.pipe';
@@ -82,7 +85,9 @@ import {
   bookingTypeIcon as sharedBookingTypeIcon,
   computeDistLatLng,
   daterangeToTripDays,
+  saveBlobAs,
   sortBookings as sharedSortBookings,
+  tripFilename,
 } from '../../shared/utils';
 import { TabList, TabsModule } from 'primeng/tabs';
 import { PlaceBoxContentComponent } from '../../shared/place-box-content/place-box-content.component';
@@ -94,6 +99,7 @@ import { TripPrettyPrintModalComponent } from '../../modals/trip-pretty-print-mo
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { LinkChipComponent } from '../../shared/link-chip/link-chip.component';
 import { ItemGalleryComponent } from '../../shared/item-gallery/item-gallery.component';
+import { TripSkeletonComponent } from '../../shared/trip-skeleton/trip-skeleton.component';
 
 const HIGHLIGHT_COLORS = [
   '#e6194b',
@@ -122,6 +128,7 @@ const HIGHLIGHT_COLORS = [
     MenuModule,
     InputTextModule,
     MarkdownPipe,
+    NaturalDurationPipe,
     FloatLabelModule,
     TableModule,
     ButtonModule,
@@ -139,6 +146,7 @@ const HIGHLIGHT_COLORS = [
     TranslocoDirective,
     LinkChipComponent,
     ItemGalleryComponent,
+    TripSkeletonComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './trip.component.html',
@@ -171,6 +179,10 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   tripMembers = signal<TripMember[]>([]);
   packingList = signal<PackingItem[]>([]);
   checklistItems = signal<ChecklistItem[]>([]);
+  packingLists = signal<PackingList[]>([]);
+  checklists = signal<ChecklistList[]>([]);
+  activePackingTab = signal<number | 'default'>('default');
+  activeChecklistTab = signal<number | 'default'>('default');
 
   searchQuery = signal<string>('');
   isPlansPanelCollapsed = signal<boolean>(false);
@@ -183,6 +195,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   isDaysPanelVisible = signal<boolean>(false);
   showOnlyUnplannedPlaces = signal<boolean>(false);
   showBookings = signal<boolean>(true);
+  showDayNotes = signal<boolean>(true);
   printOptions = signal<PrintOptions | null>(null);
   isArchivalReviewDisplayed = signal<boolean>(false);
   isArchiveWarningVisible = signal<boolean>(true);
@@ -201,8 +214,10 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   isMembersDialogVisible = false;
   isAttachmentsDialogVisible = false;
   isChecklistDialogVisible = false;
+  isCalendarDialogVisible = false;
   selectedItemProps = signal<string[]>(['place', 'comment', 'price']);
 
+  tripCalendarUrl = signal<string | null>(null);
   tripSharedDetails$?: Observable<SharedTripDetails>;
   username: string;
 
@@ -210,10 +225,12 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   printOptionsPlaces = computed(() => {
     const options = this.printOptions();
     const places: Set<Place> = new Set();
+    const seenIds = new Set<number>();
     this.trip()?.days.forEach((d) => {
       if (!options?.days.has(d.id)) return;
       d.items.forEach((i) => {
-        if (!i.place) return;
+        if (!i.place || seenIds.has(i.place.id)) return;
+        seenIds.add(i.place.id);
         places.add(i.place);
       });
     });
@@ -360,21 +377,8 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     const usedIds = this.usedPlaceIds();
     return allPlaces.filter((place) => !usedIds.has(place.id));
   });
-  dispPackingList = computed(() => {
-    const list = this.packingList();
-    const sorted = [...list].sort((a, b) =>
-      a.packed !== b.packed ? (a.packed ? 1 : -1) : a.text.localeCompare(b.text),
-    );
-
-    return sorted.reduce<Record<string, PackingItem[]>>((acc, item) => {
-      (acc[item.category] ??= []).push(item);
-      return acc;
-    }, {});
-  });
-  dispChecklist = computed(() => {
-    const items = this.checklistItems();
-    return [...items].sort((a, b) => (a.checked !== b.checked ? (a.checked ? 1 : -1) : b.id - a.id));
-  });
+  dispPackingList = computed(() => this.sortPackingItems(this.packingList()));
+  dispChecklist = computed(() => this.dispChecklistFor(this.checklistItems()));
   watchlistItems = computed(() => {
     return this.tripViewModel()
       .flatMap((day) => day.items)
@@ -467,28 +471,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   selectedItemPropsSet = computed(() => new Set(this.selectedItemProps()));
   canToggleTextAndPlace = computed(() => this.selectedItemPropsSet().has('place'));
 
-  menuTripExportItems: MenuItem[] = [
-    {
-      label: 'Export',
-      items: [
-        {
-          label: 'Calendar (.ics)',
-          icon: 'pi pi-calendar',
-          command: () => generateTripICSFile(this.trip()!, this.utilsService),
-        },
-        {
-          label: 'CSV',
-          icon: 'pi pi-file',
-          command: () => generateTripCSVFile(this.trip()!),
-        },
-        {
-          label: 'PDF',
-          icon: 'pi pi-print',
-          command: () => this.togglePrint(),
-        },
-      ],
-    },
-  ];
+  menuTripExportItems: MenuItem[] = [];
   menuTripActionsItems: MenuItem[] = [];
   menuTripPackingItems: MenuItem[] = [];
   menuTripDayActionsItems: MenuItem[] = [];
@@ -501,6 +484,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   availableItemProps = ['place', 'comment', 'latlng', 'price', 'status', 'distance'];
 
   map?: L.Map;
+  mapReady = signal(false);
   markerClusterGroup?: L.MarkerClusterGroup;
   tripMapAntLayer?: L.FeatureGroup;
   markers = new Map<number, L.Marker>();
@@ -522,6 +506,34 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
     this.statuses = this.utilsService.statuses;
     this.username = this.utilsService.loggedUser;
+
+    this.menuTripExportItems = [
+      {
+        label: this.translocoService.translate('common.actions.export'),
+        items: [
+          {
+            label: this.translocoService.translate('common.fields.ics'),
+            icon: 'pi pi-calendar',
+            command: () => this.downloadIcs(),
+          },
+          {
+            label: this.translocoService.translate('calendar.title'),
+            icon: 'pi pi-sync',
+            command: () => this.openCalendarDialog(),
+          },
+          {
+            label: this.translocoService.translate('common.fields.csv'),
+            icon: 'pi pi-file',
+            command: () => generateTripCSVFile(this.trip()!),
+          },
+          {
+            label: this.translocoService.translate('common.fields.pdf'),
+            icon: 'pi pi-print',
+            command: () => this.togglePrint(),
+          },
+        ],
+      },
+    ];
 
     this.plansSearchInput.valueChanges
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed())
@@ -651,12 +663,16 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     if (viewPrefs.selectedItemProps) this.selectedItemProps.set(viewPrefs.selectedItemProps);
     if (viewPrefs.isTextAndPlaceToggled != null) this.isTextAndPlaceToggled.set(viewPrefs.isTextAndPlaceToggled);
     if (viewPrefs.showBookings != null) this.showBookings.set(viewPrefs.showBookings);
+    if (viewPrefs.showDayNotes != null) this.showDayNotes.set(viewPrefs.showDayNotes);
 
     effect(() => {
       const selectedItemProps = this.selectedItemProps();
       const isTextAndPlaceToggled = this.isTextAndPlaceToggled();
       const showBookings = this.showBookings();
-      untracked(() => this.utilsService.saveTripViewPrefs({ selectedItemProps, isTextAndPlaceToggled, showBookings }));
+      const showDayNotes = this.showDayNotes();
+      untracked(() =>
+        this.utilsService.saveTripViewPrefs({ selectedItemProps, isTextAndPlaceToggled, showBookings, showDayNotes }),
+      );
     });
   }
 
@@ -700,6 +716,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       this.map.remove();
       this.map = undefined;
     }
+    this.mapReady.set(false);
   }
 
   getItemDayLabel(item: ViewTripItem): string {
@@ -752,7 +769,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       },
     ];
 
-    this.map = createMap(contextMenuItems, settings.tile_layer);
+    this.map = createMap(contextMenuItems, settings.tile_layer, () => this.mapReady.set(true));
     this.markerClusterGroup = createClusterGroup().addTo(this.map);
     this.map.setView([settings.map_lat, settings.map_lng]);
     this.updateMapVisualization(this.tripViewModel());
@@ -848,7 +865,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   openMenuTripDayActions(event: any, day: TripDay) {
     this.menuTripDayActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('common.fields.plan'),
@@ -875,7 +892,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   openMenuSelectedItemActions(event: any, item: any) {
     this.menuSelectedItemActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('view.open_navigation'),
@@ -903,7 +920,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   openMenuSelectedPlaceActions(event: any, place: Place) {
     this.menuSelectedPlaceActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('entities.plan.add'),
@@ -937,7 +954,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   openMenuPlanDayActionsItems(event: any, d: TripDay) {
     this.menuPlanDayActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('common.fields.summary'),
@@ -973,7 +990,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
   openMenuTripActionsItems(event: any) {
     const lists = {
-      label: 'Lists',
+      label: this.translocoService.translate('common.fields.lists'),
       items: [
         {
           label: this.translocoService.translate('common.fields.attachments'),
@@ -999,7 +1016,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       ],
     };
     const collaboration = {
-      label: 'Collaboration',
+      label: this.translocoService.translate('common.fields.collaboration'),
       items: [
         {
           label: this.translocoService.translate('common.fields.members'),
@@ -1018,17 +1035,17 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       ],
     };
     const actions = {
-      label: 'Trip',
+      label: this.translocoService.translate('common.fields.trip'),
       items: [
         {
-          label: 'PDF',
+          label: this.translocoService.translate('common.fields.pdf'),
           icon: 'pi pi-print',
           command: () => {
             this.togglePrint();
           },
         },
         {
-          label: 'Notes',
+          label: this.translocoService.translate('common.fields.notes'),
           icon: 'pi pi-info-circle',
           command: () => {
             this.openTripNotesModal();
@@ -1069,7 +1086,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   openMenuSelectedDayActions(event: any, d: TripDay) {
     this.menuSelectedDayActionsItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('view.open_navigation'),
@@ -1144,9 +1161,31 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       if (!data) return;
       this.printOptions.set(data);
       this.changeDetectionRef.detectChanges();
-      window.print();
-      this.printOptions.set(null);
+      this.waitForPrintImages().then(() => {
+        window.print();
+        this.printOptions.set(null);
+      });
     });
+  }
+
+  waitForPrintImages(timeoutMs = 3000): Promise<void> {
+    const pending = Array.from(document.querySelectorAll<HTMLImageElement>('#print-section img')).filter(
+      (img) => !img.complete,
+    );
+    if (!pending.length) return Promise.resolve();
+
+    const loaded = Promise.all(
+      pending.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            img.addEventListener('load', () => resolve(), { once: true });
+            img.addEventListener('error', () => resolve(), { once: true });
+          }),
+      ),
+    ).then(() => undefined);
+
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
+    return Promise.race([loaded, timeout]);
   }
 
   toggleFiltering() {
@@ -1155,6 +1194,10 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
   toggleBookingsVisibility() {
     this.showBookings.update((v) => !v);
+  }
+
+  toggleDayNotesVisibility() {
+    this.showDayNotes.update((v) => !v);
   }
 
   togglePlansPanel() {
@@ -1594,37 +1637,46 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     modal.onClose.pipe(take(1)).subscribe((updated: TripItem | null) => {
       if (!updated) return;
 
-      this.apiService.putTripDayItem(updated, this.trip()!.id, item.day_id, item.id).subscribe((newItem) => {
-        this.trip.update((current) => {
-          if (!current) return null;
-
-          let days = [...current.days];
-
-          if (item.day_id !== newItem.day_id) {
-            days = days.map((d) =>
-              d.id === item.day_id ? { ...d, items: d.items.filter((i) => i.id !== item.id) } : d,
-            );
-          }
-
-          days = days.map((d) => {
-            if (d.id === newItem.day_id) {
-              const exists = d.items.some((i) => i.id === newItem.id);
-              const newItems = exists ? d.items.map((i) => (i.id === newItem.id ? newItem : i)) : [...d.items, newItem];
-              return { ...d, items: newItems };
-            }
-            return d;
-          });
-
-          return { ...current, days };
-        });
-        const normalizedItem = this.normalizeItem(newItem);
-        if (this.selectedItem()?.id === item.id) this.selectedItem.set(normalizedItem);
-        if (this.selectedPlace()?.id === item.place?.id || this.selectedPlace()?.id === newItem.place?.id) {
-          const currentPlace = this.selectedPlace();
-          if (currentPlace) this.selectedPlace.set({ ...currentPlace });
-        }
-      });
+      this.apiService
+        .putTripDayItem(updated, this.trip()!.id, item.day_id, item.id)
+        .subscribe((newItem) => this.applyUpdatedItem(item, newItem));
     });
+  }
+
+  onItemLinksChange(item: TripItem, links: string[]) {
+    const newLinks = links.length ? links : undefined;
+    this.apiService
+      .putTripDayItem({ links: newLinks }, this.trip()!.id, item.day_id, item.id)
+      .subscribe((newItem) => this.applyUpdatedItem(item, newItem));
+  }
+
+  private applyUpdatedItem(item: TripItem, newItem: TripItem) {
+    this.trip.update((current) => {
+      if (!current) return null;
+
+      let days = [...current.days];
+
+      if (item.day_id !== newItem.day_id) {
+        days = days.map((d) => (d.id === item.day_id ? { ...d, items: d.items.filter((i) => i.id !== item.id) } : d));
+      }
+
+      days = days.map((d) => {
+        if (d.id === newItem.day_id) {
+          const exists = d.items.some((i) => i.id === newItem.id);
+          const newItems = exists ? d.items.map((i) => (i.id === newItem.id ? newItem : i)) : [...d.items, newItem];
+          return { ...d, items: newItems };
+        }
+        return d;
+      });
+
+      return { ...current, days };
+    });
+    const normalizedItem = this.normalizeItem(newItem);
+    if (this.selectedItem()?.id === item.id) this.selectedItem.set(normalizedItem);
+    if (this.selectedPlace()?.id === item.place?.id || this.selectedPlace()?.id === newItem.place?.id) {
+      const currentPlace = this.selectedPlace();
+      if (currentPlace) this.selectedPlace.set({ ...currentPlace });
+    }
   }
 
   deleteItem(item: TripItem) {
@@ -1831,11 +1883,26 @@ export class TripComponent implements AfterViewInit, OnDestroy {
               .subscribe((updated) => {
                 this.trip.update((t) => {
                   if (!t) return null;
-                  const days = t.days.map((d) =>
-                    d.id === day.id
-                      ? { ...d, bookings: (d.bookings ?? []).map((b) => (b.id === updated.id ? updated : b)) }
-                      : d,
-                  );
+
+                  let days = [...t.days];
+                  if (updated.day_id !== day.id) {
+                    days = days.map((d) =>
+                      d.id === day.id ? { ...d, bookings: (d.bookings ?? []).filter((b) => b.id !== updated.id) } : d,
+                    );
+                  }
+
+                  days = days.map((d) => {
+                    if (d.id !== updated.day_id) return d;
+                    const bookings = d.bookings ?? [];
+                    const exists = bookings.some((b) => b.id === updated.id);
+                    return {
+                      ...d,
+                      bookings: exists
+                        ? bookings.map((b) => (b.id === updated.id ? updated : b))
+                        : [...bookings, updated],
+                    };
+                  });
+
                   return { ...t, days };
                 });
               });
@@ -2001,26 +2068,33 @@ export class TripComponent implements AfterViewInit, OnDestroy {
         this.apiService
           .putPlace(updatedPlace.id, updatedPlace)
           .pipe(take(1))
-          .subscribe({
-            next: (place: Place) => {
-              this.trip.update((t) => {
-                if (!t) return null;
-                const places = t.places.map((p) => (p.id === place.id ? place : p));
-                const days = t.days.map((d) => ({
-                  ...d,
-                  items: d.items.map((i) => (i.place?.id === place.id ? { ...i, place: place } : i)),
-                }));
-
-                return { ...t, places, days };
-              });
-              if (this.selectedPlace()?.id === place.id) this.selectedPlace.set(place);
-              const selItem = this.selectedItem();
-              if (selItem?.place?.id === place.id)
-                this.selectedItem.update((curr) => (curr ? { ...curr, place } : null));
-            },
-          });
+          .subscribe((place: Place) => this.applyUpdatedPlace(place));
       },
     });
+  }
+
+  onSelectedPlaceLinksUpdated(place: Place, links: string[]) {
+    const newLinks = links.length ? links : undefined;
+    this.apiService
+      .putPlace(place.id, { links: newLinks })
+      .pipe(take(1))
+      .subscribe((updated: Place) => this.applyUpdatedPlace(updated));
+  }
+
+  private applyUpdatedPlace(place: Place) {
+    this.trip.update((t) => {
+      if (!t) return null;
+      const places = t.places.map((p) => (p.id === place.id ? place : p));
+      const days = t.days.map((d) => ({
+        ...d,
+        items: d.items.map((i) => (i.place?.id === place.id ? { ...i, place: place } : i)),
+      }));
+
+      return { ...t, places, days };
+    });
+    if (this.selectedPlace()?.id === place.id) this.selectedPlace.set(place);
+    const selItem = this.selectedItem();
+    if (selItem?.place?.id === place.id) this.selectedItem.update((curr) => (curr ? { ...curr, place } : null));
   }
 
   manageTripPlaces() {
@@ -2112,34 +2186,146 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   }
 
   openPackingList() {
-    this.apiService.getPackingList(this.trip()!.id).subscribe((items) => {
-      this.packingList.set(items);
-      this.isPackingDialogVisible = !this.isPackingDialogVisible;
-      this.computeMenuTripPackingItems();
+    const tripId = this.trip()!.id;
+    forkJoin([this.apiService.getPackingList(tripId), this.apiService.getPackingLists(tripId)]).subscribe(
+      ([items, lists]) => {
+        this.packingList.set(items);
+        this.packingLists.set(lists);
+        this.activePackingTab.set('default');
+        this.isPackingDialogVisible = !this.isPackingDialogVisible;
+        this.computeMenuTripPackingItems();
+      },
+    );
+  }
+
+  private sortPackingItems(items: PackingItem[]): Record<string, PackingItem[]> {
+    const sorted = [...items].sort((a, b) =>
+      a.packed !== b.packed ? (a.packed ? 1 : -1) : a.text.localeCompare(b.text),
+    );
+    return sorted.reduce<Record<string, PackingItem[]>>((acc, item) => {
+      (acc[item.category] ??= []).push(item);
+      return acc;
+    }, {});
+  }
+
+  dispPackingListFor(items: PackingItem[]): Record<string, PackingItem[]> {
+    return this.sortPackingItems(items);
+  }
+
+  private updatePackingItems(listId: number | null, updater: (items: PackingItem[]) => PackingItem[]) {
+    if (listId == null) this.packingList.update(updater);
+    else
+      this.packingLists.update((lists) => lists.map((l) => (l.id === listId ? { ...l, items: updater(l.items) } : l)));
+  }
+
+  private updateChecklistItems(listId: number | null, updater: (items: ChecklistItem[]) => ChecklistItem[]) {
+    if (listId == null) this.checklistItems.update(updater);
+    else this.checklists.update((lists) => lists.map((l) => (l.id === listId ? { ...l, items: updater(l.items) } : l)));
+  }
+
+  addPackingList() {
+    const modal: DynamicDialogRef = this.dialogService.open(TripListNameModalComponent, {
+      header: this.translocoService.translate('entities.packing_list.add'),
+      modal: true,
+      appendTo: 'body',
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: { '640px': '90vw' },
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (name: string | null) => {
+        if (!name) return;
+        this.apiService
+          .postPackingList(this.trip()!.id, name)
+          .pipe(take(1))
+          .subscribe({
+            next: (list) => {
+              this.packingLists.update((l) => [...l, list]);
+              this.activePackingTab.set(list.id);
+            },
+          });
+      },
     });
   }
 
-  computeMenuTripPackingItems() {
+  renamePackingList(list: PackingList) {
+    const modal: DynamicDialogRef = this.dialogService.open(TripListNameModalComponent, {
+      header: this.translocoService.translate('entities.packing_list.rename'),
+      modal: true,
+      appendTo: 'body',
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: { '640px': '90vw' },
+      data: { name: list.name },
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (name: string | null) => {
+        if (!name) return;
+        this.apiService
+          .putPackingList(this.trip()!.id, list.id, name)
+          .pipe(take(1))
+          .subscribe({
+            next: (updated) => this.packingLists.update((l) => l.map((pl) => (pl.id === list.id ? updated : pl))),
+          });
+      },
+    });
+  }
+
+  deletePackingList(list: PackingList) {
+    const modal = this.dialogService.open(YesNoModalComponent, {
+      header: this.translocoService.translate('entities.packing_list.delete'),
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: { '640px': '90vw' },
+      data: this.translocoService.translate('messages.delete_count', { count: list.name }),
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (bool) => {
+        if (!bool) return;
+        this.apiService
+          .deletePackingList(this.trip()!.id, list.id)
+          .pipe(take(1))
+          .subscribe({
+            next: () => {
+              this.packingLists.update((l) => l.filter((pl) => pl.id !== list.id));
+              if (this.activePackingTab() === list.id) this.activePackingTab.set('default');
+            },
+          });
+      },
+    });
+  }
+
+  computeMenuTripPackingItems(listId: number | null = null) {
     this.menuTripPackingItems = [
       {
-        label: 'Actions',
+        label: this.translocoService.translate('common.fields.actions'),
         items: [
           {
             label: this.translocoService.translate('clipboard.copy_to_clipboard'),
             icon: 'pi pi-clipboard',
-            command: () => this.copyPackingListToClipboard(),
+            command: () => this.copyPackingListToClipboard(listId),
           },
           {
             label: this.translocoService.translate('clipboard.quick_copy'),
             icon: 'pi pi-copy',
-            command: () => this.copyPackingListToService(),
+            command: () => this.copyPackingListToService(listId),
           },
           {
             label: this.translocoService.translate('clipboard.quick_paste', {
               count: this.utilsService.packingListToCopy.length,
             }),
             icon: 'pi pi-copy',
-            command: () => this.pastePackingList(),
+            command: () => this.pastePackingList(listId),
             disabled: this.trip()?.archived || !this.utilsService.packingListToCopy.length,
           },
         ],
@@ -2147,7 +2333,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     ];
   }
 
-  addPackingItem() {
+  addPackingItem(listId: number | null = null) {
     const modal: DynamicDialogRef = this.dialogService.open(TripCreatePackingModalComponent, {
       header: this.translocoService.translate('entities.item.add_packing'),
       modal: true,
@@ -2165,17 +2351,19 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       next: (item: PackingItem | null) => {
         if (!item) return;
 
-        this.apiService
-          .postPackingItem(this.trip()!.id, item)
-          .pipe(take(1))
-          .subscribe({
-            next: (item) => this.packingList.update((l) => [...l, item]),
-          });
+        const req$ =
+          listId == null
+            ? this.apiService.postPackingItem(this.trip()!.id, item)
+            : this.apiService.postPackingListItem(this.trip()!.id, listId, item);
+
+        req$.pipe(take(1)).subscribe({
+          next: (created) => this.updatePackingItems(listId, (items) => [...items, created]),
+        });
       },
     });
   }
 
-  editPackingItem(item: PackingItem) {
+  editPackingItem(item: PackingItem, listId: number | null = null) {
     const modal: DynamicDialogRef = this.dialogService.open(TripCreatePackingModalComponent, {
       header: this.translocoService.translate('entities.item.edit'),
       modal: true,
@@ -2191,12 +2379,15 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     modal.onClose.pipe(take(1)).subscribe({
       next: (updated: Partial<PackingItem> | null) => {
         if (!updated) return;
-        this.apiService
-          .putPackingItem(this.trip()!.id, item.id, updated)
-          .pipe(take(1))
-          .subscribe({
-            next: (saved) => this.packingList.update((l) => l.map((i) => (i.id === item.id ? saved : i))),
-          });
+
+        const req$ =
+          listId == null
+            ? this.apiService.putPackingItem(this.trip()!.id, item.id, updated)
+            : this.apiService.putPackingListItem(this.trip()!.id, listId, item.id, updated);
+
+        req$.pipe(take(1)).subscribe({
+          next: (saved) => this.updatePackingItems(listId, (items) => items.map((i) => (i.id === item.id ? saved : i))),
+        });
       },
     });
   }
@@ -2213,16 +2404,18 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       });
   }
 
-  onCheckPackingItem(e: CheckboxChangeEvent, id: number) {
-    this.apiService
-      .putPackingItem(this.trip()!.id, id, { packed: e.checked })
-      .pipe(take(1))
-      .subscribe({
-        next: (updated) => this.packingList.update((l) => l.map((i) => (i.id === id ? updated : i))),
-      });
+  onCheckPackingItem(e: CheckboxChangeEvent, id: number, listId: number | null = null) {
+    const req$ =
+      listId == null
+        ? this.apiService.putPackingItem(this.trip()!.id, id, { packed: e.checked })
+        : this.apiService.putPackingListItem(this.trip()!.id, listId, id, { packed: e.checked });
+
+    req$.pipe(take(1)).subscribe({
+      next: (updated) => this.updatePackingItems(listId, (items) => items.map((i) => (i.id === id ? updated : i))),
+    });
   }
 
-  deletePackingItem(item: PackingItem) {
+  deletePackingItem(item: PackingItem, listId: number | null = null) {
     const modal = this.dialogService.open(YesNoModalComponent, {
       header: this.translocoService.translate('entities.item.delete'),
       modal: true,
@@ -2239,18 +2432,25 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     modal.onClose.pipe(take(1)).subscribe({
       next: (bool) => {
         if (!bool) return;
-        this.apiService
-          .deletePackingItem(this.trip()!.id, item.id)
-          .pipe(take(1))
-          .subscribe({
-            next: () => this.packingList.update((l) => l.filter((i) => i.id !== item.id)),
-          });
+
+        const req$ =
+          listId == null
+            ? this.apiService.deletePackingItem(this.trip()!.id, item.id)
+            : this.apiService.deletePackingListItem(this.trip()!.id, listId, item.id);
+
+        req$.pipe(take(1)).subscribe({
+          next: () => this.updatePackingItems(listId, (items) => items.filter((i) => i.id !== item.id)),
+        });
       },
     });
   }
 
-  copyPackingListToClipboard() {
-    const content = this.packingList()
+  private getPackingItemsFor(listId: number | null): PackingItem[] {
+    return listId == null ? this.packingList() : (this.packingLists().find((l) => l.id === listId)?.items ?? []);
+  }
+
+  copyPackingListToClipboard(listId: number | null = null) {
+    const content = this.getPackingItemsFor(listId)
       .sort((a, b) =>
         a.category !== b.category
           ? a.category.localeCompare(b.category)
@@ -2277,8 +2477,8 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       );
   }
 
-  copyPackingListToService() {
-    const content: Partial<PackingItem>[] = this.packingList().map((item) => ({
+  copyPackingListToService(listId: number | null = null) {
+    const content: Partial<PackingItem>[] = this.getPackingItemsFor(listId).map((item) => ({
       qt: item.qt,
       text: item.text,
       category: item.category,
@@ -2291,7 +2491,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     );
   }
 
-  pastePackingList() {
+  pastePackingList(listId: number | null = null) {
     const content: Partial<PackingItem>[] = this.utilsService.packingListToCopy;
     const modal = this.dialogService.open(YesNoModalComponent, {
       header: this.translocoService.translate('clipboard.confirm_paste'),
@@ -2311,14 +2511,16 @@ export class TripComponent implements AfterViewInit, OnDestroy {
         if (!bool) return;
 
         const obs$ = content.map((packingItem) =>
-          this.apiService.postPackingItem(this.trip()!.id, packingItem as PackingItem),
+          listId == null
+            ? this.apiService.postPackingItem(this.trip()!.id, packingItem as PackingItem)
+            : this.apiService.postPackingListItem(this.trip()!.id, listId, packingItem as PackingItem),
         );
 
         forkJoin(obs$)
           .pipe(take(1))
           .subscribe({
             next: (newItems: PackingItem[]) => {
-              this.packingList.update((l) => [...l, ...newItems]);
+              this.updatePackingItems(listId, (items) => [...items, ...newItems]);
               this.utilsService.packingListToCopy = [];
               this.utilsService.toast(
                 'success',
@@ -2332,13 +2534,110 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   }
 
   openChecklist() {
-    this.apiService.getChecklist(this.trip()!.id).subscribe((items) => {
-      this.checklistItems.set(items);
-      this.isChecklistDialogVisible = !this.isChecklistDialogVisible;
+    const tripId = this.trip()!.id;
+    forkJoin([this.apiService.getChecklist(tripId), this.apiService.getChecklists(tripId)]).subscribe(
+      ([items, checklists]) => {
+        this.checklistItems.set(items);
+        this.checklists.set(checklists);
+        this.activeChecklistTab.set('default');
+        this.isChecklistDialogVisible = !this.isChecklistDialogVisible;
+      },
+    );
+  }
+
+  dispChecklistFor(items: ChecklistItem[]): ChecklistItem[] {
+    return [...items].sort((a, b) => (a.checked !== b.checked ? (a.checked ? 1 : -1) : b.id - a.id));
+  }
+
+  checklistProgress(items: ChecklistItem[]): { done: number; total: number; pct: number } {
+    const total = items.length;
+    const done = items.filter((i) => i.checked).length;
+    return { done, total, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
+  }
+
+  addChecklist() {
+    const modal: DynamicDialogRef = this.dialogService.open(TripListNameModalComponent, {
+      header: this.translocoService.translate('entities.checklist.add'),
+      modal: true,
+      appendTo: 'body',
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: { '640px': '90vw' },
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (name: string | null) => {
+        if (!name) return;
+        this.apiService
+          .postChecklist(this.trip()!.id, name)
+          .pipe(take(1))
+          .subscribe({
+            next: (checklist) => {
+              this.checklists.update((l) => [...l, checklist]);
+              this.activeChecklistTab.set(checklist.id);
+            },
+          });
+      },
     });
   }
 
-  addChecklistItem() {
+  renameChecklist(checklist: ChecklistList) {
+    const modal: DynamicDialogRef = this.dialogService.open(TripListNameModalComponent, {
+      header: this.translocoService.translate('entities.checklist.rename'),
+      modal: true,
+      appendTo: 'body',
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: { '640px': '90vw' },
+      data: { name: checklist.name },
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (name: string | null) => {
+        if (!name) return;
+        this.apiService
+          .putChecklist(this.trip()!.id, checklist.id, name)
+          .pipe(take(1))
+          .subscribe({
+            next: (updated) => this.checklists.update((l) => l.map((cl) => (cl.id === checklist.id ? updated : cl))),
+          });
+      },
+    });
+  }
+
+  deleteChecklist(checklist: ChecklistList) {
+    const modal = this.dialogService.open(YesNoModalComponent, {
+      header: this.translocoService.translate('entities.checklist.delete'),
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: { '640px': '90vw' },
+      data: this.translocoService.translate('messages.delete_count', { count: checklist.name }),
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (bool) => {
+        if (!bool) return;
+        this.apiService
+          .deleteChecklist(this.trip()!.id, checklist.id)
+          .pipe(take(1))
+          .subscribe({
+            next: () => {
+              this.checklists.update((l) => l.filter((cl) => cl.id !== checklist.id));
+              if (this.activeChecklistTab() === checklist.id) this.activeChecklistTab.set('default');
+            },
+          });
+      },
+    });
+  }
+
+  addChecklistItem(listId: number | null = null) {
     const modal: DynamicDialogRef = this.dialogService.open(TripCreateChecklistModalComponent, {
       header: this.translocoService.translate('entities.item.add_checklist'),
       modal: true,
@@ -2356,26 +2655,30 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       next: (item: ChecklistItem | null) => {
         if (!item) return;
 
-        this.apiService
-          .postChecklistItem(this.trip()!.id, item)
-          .pipe(take(1))
-          .subscribe({
-            next: (created) => this.checklistItems.update((l) => [...l, created]),
-          });
+        const req$ =
+          listId == null
+            ? this.apiService.postChecklistItem(this.trip()!.id, item)
+            : this.apiService.postChecklistListItem(this.trip()!.id, listId, item);
+
+        req$.pipe(take(1)).subscribe({
+          next: (created) => this.updateChecklistItems(listId, (items) => [...items, created]),
+        });
       },
     });
   }
 
-  onCheckChecklistItem(e: CheckboxChangeEvent, id: number) {
-    this.apiService
-      .putChecklistItem(this.trip()!.id, id, { checked: e.checked })
-      .pipe(take(1))
-      .subscribe({
-        next: (updated) => this.checklistItems.update((l) => l.map((i) => (i.id === id ? updated : i))),
-      });
+  onCheckChecklistItem(e: CheckboxChangeEvent, id: number, listId: number | null = null) {
+    const req$ =
+      listId == null
+        ? this.apiService.putChecklistItem(this.trip()!.id, id, { checked: e.checked })
+        : this.apiService.putChecklistListItem(this.trip()!.id, listId, id, { checked: e.checked });
+
+    req$.pipe(take(1)).subscribe({
+      next: (updated) => this.updateChecklistItems(listId, (items) => items.map((i) => (i.id === id ? updated : i))),
+    });
   }
 
-  deleteChecklistItem(item: ChecklistItem) {
+  deleteChecklistItem(item: ChecklistItem, listId: number | null = null) {
     const modal = this.dialogService.open(YesNoModalComponent, {
       header: this.translocoService.translate('entities.item.delete'),
       modal: true,
@@ -2392,12 +2695,53 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     modal.onClose.pipe(take(1)).subscribe({
       next: (bool) => {
         if (!bool) return;
-        this.apiService
-          .deleteChecklistItem(this.trip()!.id, item.id)
-          .pipe(take(1))
-          .subscribe({
-            next: () => this.checklistItems.update((l) => l.filter((i) => i.id !== item.id)),
-          });
+
+        const req$ =
+          listId == null
+            ? this.apiService.deleteChecklistItem(this.trip()!.id, item.id)
+            : this.apiService.deleteChecklistListItem(this.trip()!.id, listId, item.id);
+
+        req$.pipe(take(1)).subscribe({
+          next: () => this.updateChecklistItems(listId, (items) => items.filter((i) => i.id !== item.id)),
+        });
+      },
+    });
+  }
+
+  editChecklistItem(item: ChecklistItem, listId: number | null = null) {
+    const modal: DynamicDialogRef = this.dialogService.open(TripCreateChecklistModalComponent, {
+      header: this.translocoService.translate('entities.item.edit'),
+      modal: true,
+      appendTo: 'body',
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: {
+        '640px': '90vw',
+      },
+      data: { packing: item },
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (updated: ChecklistItem | null) => {
+        if (!updated) return;
+
+        const req$ =
+          listId == null
+            ? this.apiService.putChecklistItem(this.trip()!.id, item.id, {
+                text: updated.text,
+                notify_dt: updated.notify_dt,
+              })
+            : this.apiService.putChecklistListItem(this.trip()!.id, listId, item.id, {
+                text: updated.text,
+                notify_dt: updated.notify_dt,
+              });
+
+        req$.pipe(take(1)).subscribe({
+          next: (result) =>
+            this.updateChecklistItems(listId, (items) => items.map((i) => (i.id === item.id ? result : i))),
+        });
       },
     });
   }
@@ -2429,16 +2773,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (data) => {
           const blob = new Blob([data], { type: 'application/pdf' });
-          const url = window.URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.download = attachment.filename;
-          anchor.href = url;
-
-          document.body.appendChild(anchor);
-          anchor.click();
-
-          document.body.removeChild(anchor);
-          window.URL.revokeObjectURL(url);
+          saveBlobAs(blob, attachment.filename);
         },
       });
   }
@@ -2450,16 +2785,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (data) => {
           const blob = new Blob([data], { type: 'application/zip' });
-          const url = window.URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.download = `TRIP_${this.trip()!.name}_attachments.zip`;
-          anchor.href = url;
-
-          document.body.appendChild(anchor);
-          anchor.click();
-
-          document.body.removeChild(anchor);
-          window.URL.revokeObjectURL(url);
+          saveBlobAs(blob, `${tripFilename(this.trip()!.name)}_attachments.zip`);
         },
       });
   }
@@ -2572,13 +2898,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
     const itemName = item?.text || placeItems[this.selectedPlaceActiveTabIndex()]?.text || 'item';
     const dataBlob = new Blob([gpx]);
-    const downloadURL = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = downloadURL;
-    link.download = `TRIP_${this.trip()!.name}_${itemName}.gpx`;
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(downloadURL);
+    saveBlobAs(dataBlob, `${tripFilename(this.trip()!.name)}_${itemName}.gpx`);
   }
 
   itemToNavigation() {
@@ -2609,6 +2929,64 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
   getSharedTripDetails() {
     this.apiService.getSharedTripDetails(this.trip()!.id).pipe(take(1)).subscribe();
+  }
+
+  downloadIcs() {
+    this.apiService
+      .downloadTripIcs(this.trip()!.id)
+      .pipe(take(1))
+      .subscribe({
+        next: (data) => saveBlobAs(data, tripFilename(this.trip()!.name, 'ics')),
+      });
+  }
+
+  openCalendarDialog() {
+    this.isCalendarDialogVisible = true;
+    this.tripCalendarUrl.set(null);
+    this.apiService
+      .getTripCalendar(this.trip()!.id)
+      .pipe(take(1))
+      .subscribe({
+        next: (resp) => this.tripCalendarUrl.set(resp.url),
+        // 404 just means sync was never enabled for this trip
+        error: () => this.tripCalendarUrl.set(null),
+      });
+  }
+
+  enableCalendarSync() {
+    this.apiService
+      .createTripCalendar(this.trip()!.id)
+      .pipe(take(1))
+      .subscribe({
+        next: (resp) => this.tripCalendarUrl.set(resp.url),
+      });
+  }
+
+  disableCalendarSync() {
+    const modal = this.dialogService.open(YesNoModalComponent, {
+      header: this.translocoService.translate('calendar.disable'),
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      draggable: false,
+      resizable: false,
+      breakpoints: {
+        '640px': '90vw',
+      },
+      data: this.translocoService.translate('calendar.stop_syncing', { name: this.trip()!.name }),
+    })!;
+
+    modal.onClose.pipe(take(1)).subscribe({
+      next: (bool) => {
+        if (!bool) return;
+        this.apiService
+          .deleteTripCalendar(this.trip()!.id)
+          .pipe(take(1))
+          .subscribe({
+            next: () => this.tripCalendarUrl.set(null),
+          });
+      },
+    });
   }
 
   shareTrip(is_full_access = true) {
